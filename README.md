@@ -1,1 +1,3 @@
-# lyrics-aligner
+# Phoneme level lyrics aligner
+
+Work in progress...
