@@ -9,13 +9,14 @@ import os
 import glob
 
 parser = argparse.ArgumentParser(description='Word list generation')
-parser.add_argument('lyrics-path', type=str, help='path to a director with lyrics stored in .txt-files')
-parser.add_argument('--dataset-name', type=str, default='dataset1')
-args, _ = parser.parse_known_args()
+parser.add_argument('lyrics', type=str, help='path to a directory with lyrics stored in .txt-files')
+parser.add_argument('--dataset-name', type=str, default='dataset1', required=False)
+args = parser.parse_args()
 
 unique_words = set()
 
-lyrics_files = glob.glob(args.lyrics_path + '*.txt')
+lyrics_files = glob.glob(os.path.join(args.lyrics, '*.txt'))
+assert len(lyrics_files) > 0, 'No .txt-files found in {}'.format(args.lyrics)
 
 # go through .txt-files and save unique words in the unique_words set
 for file in lyrics_files:
@@ -33,9 +34,6 @@ for file in lyrics_files:
 
 unique_words.remove('')
 
-print("Unique words:", sorted(unique_words))
-print("Number of unique words:", len(unique_words))
-
 # create .txt-file
 word_file_path = 'files/{}_word_list.txt'.format(args.dataset_name)
 assert not os.path.isfile(word_file_path), 'file {} exists already. Delete or choose different' \
@@ -45,7 +43,7 @@ assert not os.path.isfile(word_file_path), 'file {} exists already. Delete or ch
 words_file = open(word_file_path, 'a')
 for word in sorted(unique_words):
     words_file.write(word + '\n')
-word_file.close()
+words_file.close()
 
 # create empty .txt-file which will contain the output of the CMU pronuciation dictionary.
 empty_file_path =  'files/{}_words2phonemes.txt'.format(args.dataset_name)
