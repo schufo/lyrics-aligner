@@ -1,28 +1,30 @@
+"""
+Reads the .dict output file of the CMU pronunciation dictionary
+and creates and saves a Python dictionary: dict[word] = phoneme.
+"""
+
 import argparse
 import pickle
 import os
 
 parser = argparse.ArgumentParser(description='word2phoneme')
 parser.add_argument('--dataset-name', type=str, default='dataset1')
-args, _ = parser.parse_known_args()
+args = parser.parse_args()
 
+# read .txt-file with words and phonemes, make dict word2phonemes
+words2phonemes_file = open('files/{}_words2phonemes.txt'.format(args.dataset_name))
+lines = words2phonemes_file.readlines()
 
-
-# read text file with words and phonemes, make dict musdb_word2cmu_phoneme
-words2cmu_phonemes_file = open('files/jamendo_words_cmu_phonemes.txt')
-lines = words2cmu_phonemes_file.readlines()
-
-jamendo_word2cmu_phoneme = {}
+word2phonemes = {}
 
 for line in lines:
     line = line.replace('\n', '').split('\t')
 
     word = line[0].lower().replace('’', "'")
     phonemes = line[1]
-    jamendo_word2cmu_phoneme[word] = phonemes
+    word2phonemes[word] = phonemes
 
-print(jamendo_word2cmu_phoneme)
-# save hansen_word2cmu_phoneme
-pickle_out = open(os.path.join('../Datasets/jamendolyrics', "jamendo_word2cmu_phoneme.pickle"), "wb")
-pickle.dump(jamendo_word2cmu_phoneme, pickle_out)
+# save dict
+pickle_out = open("files/{}_word2phonemes.pickle".format(args.dataset_name), "wb")
+pickle.dump(word2phonemes, pickle_out)
 pickle_out.close()
