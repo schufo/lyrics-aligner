@@ -12,7 +12,7 @@ parser.add_argument('--dataset-name', type=str, default='dataset1')
 args = parser.parse_args()
 
 # read .txt-file with words and phonemes, make dict word2phonemes
-words2phonemes_file = open('files/{}_words2phonemes.txt'.format(args.dataset_name))
+words2phonemes_file = open('files/{}_word2phonemes.txt'.format(args.dataset_name))
 lines = words2phonemes_file.readlines()
 
 word2phonemes = {}
