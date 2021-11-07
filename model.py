@@ -1,5 +1,6 @@
 """
-This file is a modified version of https://github.com/sigsep/open-unmix-pytorch/blob/master/model.py
+This file is a modified version of model.py of an ealier version of Open Unmix
+https://github.com/sigsep/open-unmix-pytorch
 """
 
 from torch.nn import LSTM, Linear, BatchNorm1d, Parameter
@@ -8,9 +9,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
-# import utils
-
-# from model_utls import _Model
 
 class NoOp(nn.Module):
     def __init__(self):
@@ -18,7 +16,6 @@ class NoOp(nn.Module):
 
     def forward(self, x):
         return x
-
 
 
 def smax(tensor, dim, gamma, keepdim=False):
@@ -518,5 +515,3 @@ class InformedOpenUnmix3(nn.Module):
         x = F.relu(x) * mix
 
         return x, alphas, scores
-
-
