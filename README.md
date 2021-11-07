@@ -69,7 +69,7 @@ If the lyrics are provided as words, they must be processed as follows to be use
 6. Done!
 
 ## Usage
-The model has been trained on the [MUSDB18 dataset]() using the [lyrics extension](). Therefore, it will probably work best with similar music. However, we also found it works well on solo singing. Some errors can be expected in challenging mixtures with long instrumental sections.
+The model has been trained on the [MUSDB18 dataset](https://zenodo.org/record/1117372#.YYgpfy9XZQI) using the [lyrics extension](https://zenodo.org/record/3989267#.YYgpdS9XZQI). Therefore, it will probably work best with similar music. However, we also found it works well on solo singing. Some errors can be expected in challenging mixtures with long instrumental sections.
 
 You can compute phoneme onsets and/or word onsets as follows:
 <pre>
