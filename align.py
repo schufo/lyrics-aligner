@@ -8,7 +8,6 @@ import glob
 import pickle
 
 import librosa as lb
-import matplotlib.pyplot as plt
 import torch
 import numpy as np
 
@@ -203,6 +202,7 @@ if __name__ == '__main__':
     for audio_file_path in audio_files:
 
         audio_file = os.path.basename(audio_file_path)
+        print('Processing {} ...'.format(audio_file))
         file_name, ext = os.path.splitext(audio_file)
 
         # get corresponding lyrics file
@@ -256,3 +256,5 @@ if __name__ == '__main__':
             for m, word in enumerate(word_list):
                 w_file.write(word + '\t' + str(word_onsets[m]) + '\n')
             w_file.close()
+
+        print('Done.')
