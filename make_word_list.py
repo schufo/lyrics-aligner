@@ -10,7 +10,7 @@ import glob
 
 parser = argparse.ArgumentParser(description='Word list generation')
 parser.add_argument('lyrics', type=str, help='path to a directory with lyrics stored in .txt-files')
-parser.add_argument('--dataset-name', type=str, default='dataset1', required=False)
+parser.add_argument('--dataset-name', type=str, default='dataset1')
 args = parser.parse_args()
 
 unique_words = set()
@@ -46,7 +46,7 @@ for word in sorted(unique_words):
 words_file.close()
 
 # create empty .txt-file which will contain the output of the CMU pronuciation dictionary.
-empty_file_path =  'files/{}_words2phonemes.txt'.format(args.dataset_name)
+empty_file_path =  'files/{}_word2phonemes.txt'.format(args.dataset_name)
 empty_file = open(empty_file_path, 'a')
 empty_file.write('')
 empty_file.close()
