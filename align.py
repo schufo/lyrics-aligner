@@ -6,6 +6,8 @@ import os
 import json
 import glob
 import pickle
+import warnings
+warnings.filterwarnings('ignore')
 
 import librosa as lb
 import torch
@@ -189,9 +191,11 @@ if __name__ == '__main__':
     pickle_in = open('files/phoneme2idx.pickle', 'rb')
     phoneme2idx = pickle.load(pickle_in)
 
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
     # load model
     lyrics_aligner = model.InformedOpenUnmix3()
-    state_dict = torch.load('model_parameters.pth', map_location='cpu')
+    state_dict = torch.load('model_parameters.pth', map_location=device)
     lyrics_aligner.load_state_dict(state_dict)
 
     if args.onsets in ['p', 'pw']:
@@ -214,19 +218,20 @@ if __name__ == '__main__':
             lyrics_phoneme_symbols = make_phoneme_list(lyrics_file_path)
 
         lyrics_phoneme_idx = [phoneme2idx[p] for p in lyrics_phoneme_symbols]
-        phonemes_idx = torch.tensor(lyrics_phoneme_idx, dtype=torch.float32)[None, :]
+        phonemes_idx = torch.tensor(lyrics_phoneme_idx, dtype=torch.float32, device=device)[None, :]
 
         # audio processing: load, resample, to mono, to torch
         audio, sr = lb.load(audio_file_path, sr=16000, mono=True)
-        audio_torch = torch.tensor(audio, dtype=torch.float32)[None, None, :]
+        audio_torch = torch.tensor(audio, dtype=torch.float32, device=device)[None, None, :]
 
         # compute alignment
         with torch.no_grad():
             voice_estimate, _, scores = lyrics_aligner((audio_torch, phonemes_idx))
+            scores = scores.cpu()
 
         if args.vad_threshold > 0:
             # vocal activity detection
-            voice_estimate = voice_estimate[:, 0, 0, :].numpy().T
+            voice_estimate = voice_estimate[:, 0, 0, :].cpu().numpy().T
             vocals_mag = np.sum(voice_estimate, axis=0)
 
             # frames with vocal magnitude below threshold are considered silence
