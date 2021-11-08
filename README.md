@@ -30,7 +30,7 @@ If you use the model or code, please cite the paper:
       <pre>
       conda env create -f environment_cpu.yml
       </pre>
-    - If you want to run the model on a GPU (available soon):
+    - If you want to run the model on a GPU:
       <pre>
       conda env create -f environment_gpu.yml
       </pre>
