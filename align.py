@@ -145,7 +145,7 @@ def optimal_alignment_path(matrix, init=200):
 def make_phoneme_and_word_list(text_file, word2phoneme_dict):
     word_list = []
     lyrics_phoneme_symbols = ['>']
-    with open(text_file) as lyrics:
+    with open(text_file, encoding='utf-8') as lyrics:
         lines = lyrics.readlines()
         for line in lines:
             line = line.lower().replace('\n', '').replace('’', "'")
@@ -163,7 +163,7 @@ def make_phoneme_and_word_list(text_file, word2phoneme_dict):
 
 def make_phoneme_list(text_file):
     lyrics_phoneme_symbols = []
-    with open(text_file) as lyrics:
+    with open(text_file, encoding='utf-8') as lyrics:
         lines = lyrics.readlines()
         for line in lines:
             phoneme = line.replace('\n', '').upper()
@@ -193,8 +193,11 @@ if __name__ == '__main__':
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
+    device_printed = 'GPU' if torch.cuda.is_available() else 'CPU'
+    print('Running model on {}.'.format(device_printed))
+
     # load model
-    lyrics_aligner = model.InformedOpenUnmix3()
+    lyrics_aligner = model.InformedOpenUnmix3().to(device)
     state_dict = torch.load('model_parameters.pth', map_location=device)
     lyrics_aligner.load_state_dict(state_dict)
 
