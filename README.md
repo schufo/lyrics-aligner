@@ -54,7 +54,7 @@ If your lyrics are already decomposed into phonemes, please consider the followi
 If the lyrics are provided as words, they must be processed as follows to be used with the alignment model:
 1. Generate a .txt-file with a list of unique words:
     <pre>
-    make_word_list.py PATH/TO/LYRICS/DIRECTORY --dataset-name NAME
+    python make_word_list.py PATH/TO/LYRICS/DIRECTORY --dataset-name NAME
     </pre>
     The `--dataset-name` flag is optional. It can be used if several datasets should be aligned with this model. The output files will contain the dataset name which defaults to 'dataset1'.
     This command generates the files `NAME_word_list.txt` and `NAME_word2phoneme.txt` in the `files` directory.
@@ -63,7 +63,7 @@ If the lyrics are provided as words, they must be processed as follows to be use
 4. Copy the whole list and paste it into `NAME_word2phoneme.txt` in the `files` directory.
 5. Run the following command:
     <pre>
-    make_word2phoneme_dict.py --dataset-name NAME
+    python make_word2phoneme_dict.py --dataset-name NAME
     </pre>
     Use the same dataset name as in step 1. This will generate a Python dictionary to translate each word into phonemes and save it as `NAME_word2phonemes.pickle` in `files`.
 6. Done!
@@ -73,7 +73,7 @@ The model has been trained on the [MUSDB18 dataset](https://zenodo.org/record/11
 
 You can compute phoneme onsets and/or word onsets as follows:
 <pre>
-align.py PATH/TO/AUDIO/DIRECTORY PATH/TO/LYRICS/DIRECTORY \
+python align.py PATH/TO/AUDIO/DIRECTORY PATH/TO/LYRICS/DIRECTORY \
 --lyrics-format w --onsets p --dataset-name dataset1 --vad-threshold 0
 </pre>
 Optional flags (defaults are shown above):
@@ -82,7 +82,7 @@ Optional flags (defaults are shown above):
 
 `--onsets` If phoneme onsets should be computed, set to `p`. If word onsets should be computed, set to `w`. If phoneme and word onsets should be computed, set to `pw` (only possible if lyrics are provided as words).
 
-`--dataset-name` Should be the same as used above.
+`--dataset-name` Should be the same as used for data preparation above.
 
 `--vad-threshold` The model also computes an estimate of the isolated singing voice which can be used as Voice Activity Detector (VAD). This may be useful in challenging scenarios where long pauses are made by the singer while instruments are playing (e.g. intro, soli, outro). The magnitude of the vocals estimate is computed. Here a threshold (float) can be set to discriminate between active and inactive voice given the magnitude. The default is 0 which means that no VAD is used. The optimal value for a given audio signal may be difficult to determine as it depends on the loudness of the voice. In our experiments we used values between 0 and 30. You could print or plot the voice magnitude (computed in line 235) to get an intuition for an appropriate value. We recommend to use the option only if large errors are made on audio files with long instrumental sections. 
 
