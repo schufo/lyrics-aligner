@@ -86,6 +86,14 @@ Optional flags (defaults are shown above):
 
 `--vad-threshold` The model also computes an estimate of the isolated singing voice which can be used as Voice Activity Detector (VAD). This may be useful in challenging scenarios where long pauses are made by the singer while instruments are playing (e.g. intro, soli, outro). The magnitude of the vocals estimate is computed. Here a threshold (float) can be set to discriminate between active and inactive voice given the magnitude. The default is 0 which means that no VAD is used. The optimal value for a given audio signal may be difficult to determine as it depends on the loudness of the voice. In our experiments we used values between 0 and 30. You could print or plot the voice magnitude (computed in line 235) to get an intuition for an appropriate value. We recommend to use the option only if large errors are made on audio files with long instrumental sections. 
 
+## Using this model - a Colab example
+
+Here's a Colab example for this algorithm, doing phonemes and lyrics alignment on the [Vocadito Dataset](https://zenodo.org/record/5578807).
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/tlr-id/lyrics-aligner/blob/ColabDemo/DemoColab_PhonemeAlignment.ipynb)
+
+(Working as of 20/04/2023)
+
 ## Acknowledgment
 This project has received funding from the European Union's Horizon 2020 research and innovation programme under the Marie Skłodowska-Curie grant agreement No. 765068.
 
