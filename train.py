@@ -1,19 +1,20 @@
 """
 Generates .txt-files with phoneme and/or word onsets.
 """
-import argparse
-import os
-import json
-import glob
-import pickle
-import warnings
-warnings.filterwarnings('ignore')
-
 import librosa as lb
 import torch
 import numpy as np
-
 import model
+import argparse
+import os
+import glob
+import pickle
+import warnings
+
+from datahandler import get_dataloader_obj
+
+warnings.filterwarnings('ignore')
+
 
 def compute_phoneme_onsets(optimal_path_matrix, hop_length, sampling_rate, return_skipped_idx=False):
     """
@@ -30,7 +31,7 @@ def compute_phoneme_onsets(optimal_path_matrix, hop_length, sampling_rate, retur
     phoneme_indices = np.argmax(optimal_path_matrix, axis=1)
 
     # find positions that have been skiped:
-    skipped_idx = [x+1 for i, (x, y) in
+    skipped_idx = [x + 1 for i, (x, y) in
                    enumerate(zip(phoneme_indices[:-1], phoneme_indices[1:]))
                    if x == y - 2]
 
@@ -49,6 +50,7 @@ def compute_phoneme_onsets(optimal_path_matrix, hop_length, sampling_rate, retur
             # set the onset of skipped tokens to the onset of the previous token
             phoneme_onsets.insert(idx, phoneme_onsets[idx])
         return phoneme_onsets
+
 
 def compute_word_alignment(phonemes, phoneme_onsets):
     """
@@ -71,10 +73,11 @@ def compute_word_alignment(phonemes, phoneme_onsets):
             continue  # skip the first space token
         if phoneme == '>' and idx != len(phonemes) - 1:
             word_offsets.append(phoneme_onsets[idx])  # space onset is offset of previous word
-            word_onsets.append(phoneme_onsets[idx+1]) # word onset is phoneme onset after space character
+            word_onsets.append(phoneme_onsets[idx + 1])  # word onset is phoneme onset after space character
     word_offsets.append(phoneme_onsets[-1])  # last token (space token) onset is the last word's offset
 
     return word_onsets, word_offsets
+
 
 def accumulated_cost_numpy(score_matrix, init=None):
     """
@@ -96,14 +99,13 @@ def accumulated_cost_numpy(score_matrix, init=None):
 
     # Sweep diagonally through alphas (as done in https://github.com/lyprince/sdtw_pytorch/blob/master/sdtw.py)
     # See also https://towardsdatascience.com/gpu-optimized-dynamic-programming-8d5ba3d7064f
-    for (m,n),(m_m1,n_m1) in zip(model.MatrixDiagonalIndexIterator(m = M + 1, n = N + 1, k_start=1),
-                                 model.MatrixDiagonalIndexIterator(m = M, n= N, k_start=0)):
-        d1 = dtw_matrix[n_m1, m] # shape(number_of_considered_values)
+    for (m, n), (m_m1, n_m1) in zip(model.MatrixDiagonalIndexIterator(m=M + 1, n=N + 1, k_start=1),
+                                    model.MatrixDiagonalIndexIterator(m=M, n=N, k_start=0)):
+        d1 = dtw_matrix[n_m1, m]  # shape(number_of_considered_values)
         d2 = dtw_matrix[n_m1, m_m1]
         max_values = np.maximum(d1, d2)
         dtw_matrix[n, m] = score_matrix[0, n_m1, m_m1] + max_values
-    return dtw_matrix[1:N+1, 1:M+1]
-
+    return dtw_matrix[1:N + 1, 1:M + 1]
 
 
 def optimal_alignment_path(matrix, init=200):
@@ -137,7 +139,7 @@ def optimal_alignment_path(matrix, init=200):
         if n == -2:
             print("DTW backward pass failed. n={} but m={}".format(n, m))
             break
-    optimal_path_matrix[0:n+1, 0] = 1
+    optimal_path_matrix[0:n + 1, 0] = 1
 
     return optimal_path_matrix
 
@@ -161,6 +163,7 @@ def make_phoneme_and_word_list(text_file, word2phoneme_dict):
                 lyrics_phoneme_symbols.append('>')
     return lyrics_phoneme_symbols, word_list
 
+
 def make_phoneme_list(text_file):
     lyrics_phoneme_symbols = []
     with open(text_file, encoding='utf-8') as lyrics:
@@ -172,21 +175,10 @@ def make_phoneme_list(text_file):
     return lyrics_phoneme_symbols
 
 
-if __name__ == '__main__':
-
-    parser = argparse.ArgumentParser(description='Lyrics aligner')
-
-    parser.add_argument('audio_path', type=str)
-    parser.add_argument('lyrics_path', type=str)
-    parser.add_argument('--lyrics-format', type=str, choices=['w', 'p'], default='w')
-    parser.add_argument('--onsets', type=str, choices=['p', 'w', 'pw'], default='p')
-    parser.add_argument('--dataset-name', type=str, default='dataset1')
-    parser.add_argument('--vad-threshold', type=float, default=0)
-    args = parser.parse_args()
-
+def train(args):
     audio_files = sorted(glob.glob(os.path.join(args.audio_path, '*')))
-
-    pickle_in = open('files/{}_word2phonemes.pickle'.format(args.dataset_name), 'rb')
+    w2ph_pickle_path = args.word2phoneme_dict_path
+    pickle_in = open(w2ph_pickle_path, 'rb')
     word2phonemes = pickle.load(pickle_in)
     pickle_in = open('files/phoneme2idx.pickle', 'rb')
     phoneme2idx = pickle.load(pickle_in)
@@ -228,6 +220,7 @@ if __name__ == '__main__':
         audio_torch = torch.tensor(audio, dtype=torch.float32, device=device)[None, None, :]
 
         # compute alignment
+        # Todo: Change here
         with torch.no_grad():
             voice_estimate, _, scores = lyrics_aligner((audio_torch, phonemes_idx))
             scores = scores.cpu()
@@ -266,3 +259,17 @@ if __name__ == '__main__':
             w_file.close()
 
         print('Done.')
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Lyrics aligner')
+    parser.add_argument('--audio_path', type=str, default="dataset/aria_violetta/audio")
+    parser.add_argument('--lyrics_path', type=str, default="dataset/aria_violetta/text")
+    parser.add_argument('--word2phoneme_dict_path', type=str, default="dataset/aria_violetta/word2phonemes.pickle")
+    parser.add_argument('--lyrics-format', type=str, choices=['w', 'p'], default='w')
+    parser.add_argument('--onsets', type=str, choices=['p', 'w', 'pw'], default='p')
+    parser.add_argument('--dataset-name', type=str, default='dataset1')
+    parser.add_argument('--vad-threshold', type=float, default=0)
+    args = parser.parse_args()
+
+    train(args)

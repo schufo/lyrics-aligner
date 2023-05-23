@@ -32,7 +32,10 @@ for file in lyrics_files:
             for word in words:
                 unique_words.add(word)
 
-unique_words.remove('')
+try:
+    unique_words.remove('')
+except KeyError:
+    pass
 
 # create .txt-file
 word_file_path = 'files/{}_word_list.txt'.format(args.dataset_name)
