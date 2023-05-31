@@ -247,6 +247,35 @@ class Aria:
 
 class AriaDataset(Dataset):
     def __init__(self, path):
+        """
+        Initialize the Dataset object by loading all data from the provided path.
+
+        Folder structure requirements:
+        The path should contain multiple folders, where each folder represents a song dataset.
+        Each song dataset folder should have the following structure:
+
+            song_dataset_folder/
+            ├── audio/
+            │   └── song.mp3
+            ├── text/
+            │   └── song.txt
+            ├── labels.tsv
+            └── word2phonemes.pickle
+
+        Folder Names:
+        The name of the song dataset folder is used as the identifier for the dataset.
+
+        File Names and Their Contents:
+        - song.mp3: An audio file of the song.
+        - song.txt: A text file containing the lyrics of the song. Each word should be separated by a space.
+        - labels.tsv: A tab-separated file containing the start and end times of each word in the song.
+                        The file should contain header lines.
+        - word2phonemes.pickle: A pickle file that maps each word to its corresponding phonemes.
+
+        Args:
+            path (str): The path to the directory containing the song datasets.
+        """
+
         self.path = path
         self.X = []
         self.labels = []
