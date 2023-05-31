@@ -28,7 +28,7 @@ def compute_phoneme_onsets(optimal_path_matrix, hop_length, sampling_rate, retur
         phoneme_onsets: list
     """
 
-    phoneme_indices = np.argmax(optimal_path_matrix, axis=1)
+    phoneme_indices = np.argmax(optimal_path_matrix, axis=1)    # Not Differentiable
 
     # find positions that have been skiped:
     skipped_idx = [x + 1 for i, (x, y) in

@@ -24,6 +24,7 @@ def smax(tensor, dim, gamma, keepdim=False):
     result = torch.log(sum_over_dim) / gamma
     return result
 
+
 class MatrixDiagonalIndexIterator:
     '''
     Custom iterator class to return successive diagonal indices of a matrix
@@ -39,10 +40,10 @@ class MatrixDiagonalIndexIterator:
             k_start (int)   : (k_start, k_start) index to begin from
             bandwidth (int) : bandwidth to constrain indices within
         '''
-        self.m         = m
-        self.n         = n
-        self.k         = k_start
-        self.k_max     = self.m + self.n - k_start - 1
+        self.m = m
+        self.n = n
+        self.k = k_start
+        self.k_max = self.m + self.n - k_start - 1
         self.bandwidth = bandwidth
 
     def __iter__(self):
@@ -57,27 +58,27 @@ class MatrixDiagonalIndexIterator:
             elif self.k < self.m and self.k < self.n:
                 self.i = self.i + [self.k]
                 self.j = [self.k] + self.j
-                self.k+=1
+                self.k += 1
 
             elif self.k >= self.m and self.k < self.n:
                 self.j.pop(-1)
                 self.j = [self.k] + self.j
-                self.k+=1
+                self.k += 1
 
             elif self.k < self.m and self.k >= self.n:
                 self.i.pop(0)
                 self.i = self.i + [self.k]
-                self.k+=1
+                self.k += 1
 
             elif self.k >= self.m and self.k >= self.n:
                 self.i.pop(0)
                 self.j.pop(-1)
-                self.k+=1
+                self.k += 1
 
         else:
             self.i = [self.k]
             self.j = [self.k]
-            self.k+=1
+            self.k += 1
 
         if self.bandwidth:
             i_scb, j_scb = sakoe_chiba_band(self.i.copy(), self.j.copy(), self.m, self.n, bandwidth)
@@ -85,9 +86,10 @@ class MatrixDiagonalIndexIterator:
         else:
             return self.i.copy(), self.j.copy()
 
+
 def sakoe_chiba_band(i_list, j_list, m, n, bandwidth=1):
-    i_scb, j_scb = zip(*[(i, j) for i,j in zip(i_list, j_list)
-                         if abs(2*(i*(n-1) - j*(m-1))) < max(m, n)*(bandwidth+1)])
+    i_scb, j_scb = zip(*[(i, j) for i, j in zip(i_list, j_list)
+                         if abs(2 * (i * (n - 1) - j * (m - 1))) < max(m, n) * (bandwidth + 1)])
     return list(i_scb), list(j_scb)
 
 
@@ -110,25 +112,22 @@ def dtw_matrix(scores, mode='faster', idx_to_skip=None):
     if mode == 'faster':
         # there is an issue with pytorch backward computation when using 'faster' with pytorch 1.2.0:
         # https://github.com/pytorch/pytorch/issues/24853
-        dtw_matrix = torch.ones((B, N+1, M+1), device=device) * -100000
+        dtw_matrix = torch.ones((B, N + 1, M + 1), device=device) * -100000
 
         dtw_matrix[:, 0, 0] = torch.ones((B,), device=device) * 200000
         # Sweep diagonally through alphas (as done in https://github.com/lyprince/sdtw_pytorch/blob/master/sdtw.py)
         # See also https://towardsdatascience.com/gpu-optimized-dynamic-programming-8d5ba3d7064f
-        for (m,n),(m_m1,n_m1) in zip(MatrixDiagonalIndexIterator(m = M + 1, n = N + 1, k_start=1),
-                                     MatrixDiagonalIndexIterator(m = M, n= N, k_start=0)):
-
-            d1 = dtw_matrix[:, n_m1, m].unsqueeze(2) # shape(B, number_of_considered_values, 1)
+        for (m, n), (m_m1, n_m1) in zip(MatrixDiagonalIndexIterator(m=M + 1, n=N + 1, k_start=1),
+                                        MatrixDiagonalIndexIterator(m=M, n=N, k_start=0)):
+            d1 = dtw_matrix[:, n_m1, m].unsqueeze(2)  # shape(B, number_of_considered_values, 1)
             d2 = dtw_matrix[:, n_m1, m_m1].unsqueeze(2)
             max_values, idx = torch.max(torch.cat([d1, d2], dim=2), dim=2)
             dtw_matrix[:, n, m] = scores[:, n_m1, m_m1] + max_values
-        return dtw_matrix[:, 1:N+1, 1:M+1]
+        return dtw_matrix[:, 1:N + 1, 1:M + 1]
 
 
 def optimal_alignment_path(matrix):
-
     # matrix is torch.tensor with size (1, sequence_length1, sequence_length2)
-
     # forward step DTW
     accumulated_scores = dtw_matrix(matrix, mode='faster')
     accumulated_scores = accumulated_scores.cpu().detach().squeeze(0).numpy()
@@ -141,7 +140,6 @@ def optimal_alignment_path(matrix):
     n = N - 2
     m = M - 1
 
-
     while m > 0:
         d1 = accumulated_scores[n, m]  # score at n of optimal phoneme at n-1
         d2 = accumulated_scores[n, m - 1]  # score at n of phoneme before optimal phoneme at n-1
@@ -152,7 +150,7 @@ def optimal_alignment_path(matrix):
         if n == -2:
             print("DTW backward pass failed. n={} but m={}".format(n, m))
             break
-    optimal_path_matrix[0:n+1, 0] = 1
+    optimal_path_matrix[0:n + 1, 0] = 1
     return optimal_path_matrix  # numpy array with shape (N, M)
 
 
@@ -177,10 +175,10 @@ def pad_for_stft(signal, hop_length):
 
 class STFT(nn.Module):
     def __init__(
-        self,
-        n_fft=4096,
-        n_hop=1024,
-        center=False
+            self,
+            n_fft=4096,
+            n_hop=1024,
+            center=False
     ):
         super(STFT, self).__init__()
         self.window = nn.Parameter(
@@ -201,7 +199,7 @@ class STFT(nn.Module):
         nb_samples, nb_channels, nb_timesteps = x.size()
 
         # merge nb_samples and nb_channels for multichannel stft
-        x = x.reshape(nb_samples*nb_channels, -1)
+        x = x.reshape(nb_samples * nb_channels, -1)
 
         # compute stft with parameters as close as possible scipy settings
         stft_f = torch.stft(
@@ -223,9 +221,9 @@ class STFT(nn.Module):
 
 class Spectrogram(nn.Module):
     def __init__(
-        self,
-        power=1,
-        mono=True
+            self,
+            power=1,
+            mono=True
     ):
         super(Spectrogram, self).__init__()
         self.power = power
@@ -269,28 +267,28 @@ def index2one_hot(index_tensor, vocabulary_size):
     return chars_one_hot
 
 
-
 class InformedOpenUnmix3(nn.Module):
     """
     Open Unmix with an additional text encoder and attention mechanism
     """
+
     def __init__(
-        self,
-        n_fft=512,
-        n_hop=256,
-        input_is_spectrogram=False,
-        hidden_size=512,
-        nb_channels=1,
-        sample_rate=16000,
-        audio_encoder_layers=2,
-        nb_layers=3,
-        input_mean=None,
-        input_scale=None,
-        max_bin=257,
-        unidirectional=False,
-        power=1,
-        vocab_size=44,
-        audio_transform='STFT'
+            self,
+            n_fft=512,
+            n_hop=256,
+            input_is_spectrogram=False,
+            hidden_size=512,
+            nb_channels=1,
+            sample_rate=16000,
+            audio_encoder_layers=2,
+            nb_layers=3,
+            input_mean=None,
+            input_scale=None,
+            max_bin=257,
+            unidirectional=False,
+            power=1,
+            vocab_size=44,
+            audio_transform='STFT'
     ):
         """
         Input: (nb_samples, nb_channels, nb_timesteps)
@@ -307,7 +305,7 @@ class InformedOpenUnmix3(nn.Module):
         # text processing
         self.vocab_size = vocab_size
 
-        self.lstm_txt = LSTM(vocab_size, hidden_size//2, num_layers=1, batch_first=True, bidirectional=True)
+        self.lstm_txt = LSTM(vocab_size, hidden_size // 2, num_layers=1, batch_first=True, bidirectional=True)
 
         # attention
         w_s_init = torch.empty(hidden_size, hidden_size)
@@ -338,7 +336,7 @@ class InformedOpenUnmix3(nn.Module):
 
         # audio encoder
         self.fc1 = Linear(
-            self.nb_bins*nb_channels, hidden_size,
+            self.nb_bins * nb_channels, hidden_size,
             bias=False
         )
 
@@ -353,7 +351,6 @@ class InformedOpenUnmix3(nn.Module):
                                        num_layers=audio_encoder_layers, bidirectional=not unidirectional,
                                        batch_first=False, dropout=0.4)
 
-
         self.lstm = LSTM(
             input_size=hidden_size,
             hidden_size=lstm_hidden_size,
@@ -364,7 +361,7 @@ class InformedOpenUnmix3(nn.Module):
         )
 
         self.fc2 = Linear(
-            in_features=hidden_size*2,
+            in_features=hidden_size * 2,
             out_features=hidden_size,
             bias=False
         )
@@ -373,11 +370,11 @@ class InformedOpenUnmix3(nn.Module):
 
         self.fc3 = Linear(
             in_features=hidden_size,
-            out_features=self.nb_output_bins*nb_channels,
+            out_features=self.nb_output_bins * nb_channels,
             bias=False
         )
 
-        self.bn3 = BatchNorm1d(self.nb_output_bins*nb_channels)
+        self.bn3 = BatchNorm1d(self.nb_output_bins * nb_channels)
 
         if input_mean is not None:
             input_mean = torch.from_numpy(
@@ -388,7 +385,7 @@ class InformedOpenUnmix3(nn.Module):
 
         if input_scale is not None:
             input_scale = torch.from_numpy(
-                1.0/input_scale[:self.nb_bins]
+                1.0 / input_scale[:self.nb_bins]
             ).float()
         else:
             input_scale = torch.ones(self.nb_bins)
@@ -449,7 +446,7 @@ class InformedOpenUnmix3(nn.Module):
 
         # to (nb_frames*nb_samples, nb_channels*nb_bins)
         # and encode to (nb_frames*nb_samples, hidden_size)
-        x = self.fc1(x.reshape(-1, nb_channels*self.nb_bins))
+        x = self.fc1(x.reshape(-1, nb_channels * self.nb_bins))
         # normalize every instance in a batch
         x = self.bn1(x)
         x = x.reshape(nb_frames, nb_samples, self.hidden_size)
@@ -470,7 +467,6 @@ class InformedOpenUnmix3(nn.Module):
         scores = torch.bmm(x, side_info_transformed)
         dtw_alphas = dtw_matrix(scores, mode='faster')
         alphas = F.softmax(dtw_alphas, dim=2)
-
 
         # compute context vectors
         context = torch.bmm(torch.transpose(h, 1, 2), torch.transpose(alphas, 1, 2))
