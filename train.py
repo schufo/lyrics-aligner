@@ -4,6 +4,10 @@ Generates .txt-files with phoneme and/or word onsets.
 import librosa as lb
 import torch
 import numpy as np
+from torch import nn
+from torch.optim import Adam
+from torch.utils.data import DataLoader
+
 import model
 import argparse
 import os
@@ -11,7 +15,7 @@ import glob
 import pickle
 import warnings
 
-from datahandler import get_dataloader_obj
+from datahandler import get_dataloader_obj, AriaDataset
 
 warnings.filterwarnings('ignore')
 
@@ -28,7 +32,7 @@ def compute_phoneme_onsets(optimal_path_matrix, hop_length, sampling_rate, retur
         phoneme_onsets: list
     """
 
-    phoneme_indices = np.argmax(optimal_path_matrix, axis=1)    # Not Differentiable
+    phoneme_indices = np.argmax(optimal_path_matrix, axis=1)  # Not Differentiable
 
     # find positions that have been skiped:
     skipped_idx = [x + 1 for i, (x, y) in
@@ -175,7 +179,7 @@ def make_phoneme_list(text_file):
     return lyrics_phoneme_symbols
 
 
-def train(args):
+def old_align(args):
     audio_files = sorted(glob.glob(os.path.join(args.audio_path, '*')))
     w2ph_pickle_path = args.word2phoneme_dict_path
     pickle_in = open(w2ph_pickle_path, 'rb')
@@ -261,8 +265,73 @@ def train(args):
         print('Done.')
 
 
+def compute_hard_alignment(scores, lyrics_phoneme_symbols, file_name, word_list):
+    optimal_path = optimal_alignment_path(scores)
+    phoneme_onsets = compute_phoneme_onsets(optimal_path, hop_length=256, sampling_rate=16000)
+
+    if args.onsets in ['p', 'pw']:
+        # save phoneme onsets
+        p_file = open('outputs/{}/phoneme_onsets/{}.txt'.format(args.dataset_name, file_name), 'a')
+        for m, symb in enumerate(lyrics_phoneme_symbols):
+            p_file.write(symb + '\t' + str(phoneme_onsets[m]) + '\n')
+        p_file.close()
+
+    if args.onsets in ['w', 'pw']:
+        word_onsets, word_offsets = compute_word_alignment(lyrics_phoneme_symbols, phoneme_onsets)
+
+        # save word onsets
+        w_file = open('outputs/{}/word_onsets/{}.txt'.format(args.dataset_name, file_name), 'a')
+        for m, word in enumerate(word_list):
+            w_file.write(word + '\t' + str(word_onsets[m]) + '\n')
+        w_file.close()
+
+
+def train(args):
+    num_epochs = args.epochs
+
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    print('Running model on {}.'.format(device))
+
+    # load model
+    lyrics_aligner = model.InformedOpenUnmix3().to(device)
+    state_dict = torch.load('checkpoint/base/model_parameters.pth', map_location=device)
+    lyrics_aligner.load_state_dict(state_dict)
+
+    # load dataset
+    dataset = AriaDataset(path="dataset/")
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
+
+    # loss function
+    loss_fn = nn.CrossEntropyLoss()
+
+    # Optimizer
+    optimizer = Adam(lyrics_aligner.parameters(), lr=1e-3)
+
+    pickle_in = open('files/phoneme2idx.pickle', 'rb')
+    phoneme2idx = pickle.load(pickle_in)
+
+    for epoch in range(num_epochs):
+        # TODO: Remove the unwanted variables later when the training loop is working
+        for name, audio, phonemes, sr, audio_duration, words, start_time, end_time, word_start_indexes, word_end_indexes, w2ph_dict, alpha_tensor in dataloader:
+            # 'phonemes' is a list of tuples, for now I am just taking the first element from that tuple using ph[0]
+            lyrics_phoneme_idx = [phoneme2idx[ph[0]] for ph in phonemes]
+            phonemes_idx = torch.tensor(lyrics_phoneme_idx, dtype=torch.float32, device=device)[None, :]
+            alpha_t_hat, scores = lyrics_aligner((audio, phonemes_idx))
+            # TODO: Profile this step if it makes sense to do it on each iteration vs storing big tensors.
+            alpha_tensor = alpha_tensor.to_dense()
+            alpha_tensor = alpha_tensor.permute((0, 2, 1))
+            loss = loss_fn(alpha_tensor, alpha_t_hat)
+            print(f"Loss computed: {loss}. Running back pass now.")
+            loss.backward()
+            print("Backpass success!")
+            optimizer.step()
+            print("Optimizer update success!")
+            print('Done.')
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Lyrics aligner')
+    parser.add_argument('--epochs', type=int, default=10)
     parser.add_argument('--audio_path', type=str, default="dataset/aria_violetta/audio")
     parser.add_argument('--lyrics_path', type=str, default="dataset/aria_violetta/text")
     parser.add_argument('--word2phoneme_dict_path', type=str, default="dataset/aria_violetta/word2phonemes.pickle")
@@ -273,3 +342,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     train(args)
+    # old_align(args)

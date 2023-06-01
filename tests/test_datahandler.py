@@ -2,7 +2,7 @@ from unittest import TestCase
 
 import torch
 
-from datahandler import phoneme_to_stft_frame, get_phonemes_in_intervals, create_sparse_alpha_matrix_from_labels
+from datahandler import phoneme_to_stft_frame, get_phonemes_in_intervals, create_sparse_alpha_tensor_from_labels
 
 
 class Test(TestCase):

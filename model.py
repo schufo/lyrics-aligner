@@ -468,46 +468,4 @@ class InformedOpenUnmix3(nn.Module):
         dtw_alphas = dtw_matrix(scores, mode='faster')
         alphas = F.softmax(dtw_alphas, dim=2)
 
-        # compute context vectors
-        context = torch.bmm(torch.transpose(h, 1, 2), torch.transpose(alphas, 1, 2))
-
-        # make shape: (nb_samples, N, hidden_size)
-        context = torch.transpose(context, 1, 2)
-
-        # -------------------------------------------------------------------------------------------------------------
-        # connection of audio and text
-        concat = torch.cat((context, x), dim=2)
-        x = self.fc_c(concat)
-        x = self.bn_c(x.transpose(1, 2))  # (nb_samples, hidden_size, nb_frames)
-        x = torch.tanh(x)
-
-        x = x.transpose(1, 2)
-        x = x.transpose(0, 1)  # --> (nb_frames, nb_samples, hidden_size)
-
-        # apply 3-layers of stacked LSTM
-        lstm_out = self.lstm(x)
-
-        # lstm skip connection
-        x = torch.cat([x, lstm_out[0]], -1)
-
-        # first dense stage + batch norm
-        x = self.fc2(x.reshape(-1, x.shape[-1]))
-        x = self.bn2(x)
-
-        x = F.relu(x)
-
-        # second dense stage + layer norm
-        x = self.fc3(x)
-        x = self.bn3(x)
-
-        # reshape back to original dim
-        x = x.reshape(nb_frames, nb_samples, nb_channels, self.nb_output_bins)
-
-        # apply output scaling
-        x *= self.output_scale
-        x += self.output_mean
-
-        # since our output is non-negative, we can apply RELU
-        x = F.relu(x) * mix
-
-        return x, alphas, scores
+        return alphas, scores
