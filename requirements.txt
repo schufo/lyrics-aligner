@@ -1,0 +1,6 @@
+ass==0.5.3
+librosa==0.9.2
+numpy==1.23.4
+openpyxl==3.1.2
+TextGrid==1.5
+torch==1.10.2
