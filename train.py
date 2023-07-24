@@ -244,7 +244,6 @@ def compute_alignment_mse(scores, phonemes, start_time):
 
 
 def train(args):
-    wandb.login(key="d2a2655d23be9c5fbe4d08ec428930c2c887d09f")
     num_epochs = args.epochs
     save_steps = args.save_steps
     run_name = args.run_name
