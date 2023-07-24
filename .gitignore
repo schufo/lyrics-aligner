@@ -2,6 +2,9 @@
 
 data/
 dataset/
+checkpoint/
+runs/
+wandb/
 OSU/
 .mypy_cache
 .vscode

@@ -466,6 +466,6 @@ class InformedOpenUnmix3(nn.Module):
 
         scores = torch.bmm(x, side_info_transformed)
         dtw_alphas = dtw_matrix(scores, mode='faster')
-        alphas = F.softmax(dtw_alphas, dim=2)
+        alphas = F.softmax(dtw_alphas, dim=2) # Using Cross Entropy loss so no need for alphas
 
         return alphas, scores

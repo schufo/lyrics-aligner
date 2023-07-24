@@ -1,21 +1,21 @@
 """
 Generates .txt-files with phoneme and/or word onsets.
 """
-import librosa as lb
+import copy
+from datetime import datetime
 import torch
 import numpy as np
+import wandb as wandb
 from torch import nn
 from torch.optim import Adam
-from torch.utils.data import DataLoader
-
+from torch.utils.data import DataLoader, random_split
+from torch.utils.tensorboard import SummaryWriter
 import model
 import argparse
 import os
-import glob
 import pickle
 import warnings
-
-from datahandler import get_dataloader_obj, AriaDataset
+from datahandler import AriaDataset
 
 warnings.filterwarnings('ignore')
 
@@ -179,93 +179,14 @@ def make_phoneme_list(text_file):
     return lyrics_phoneme_symbols
 
 
-def old_align(args):
-    audio_files = sorted(glob.glob(os.path.join(args.audio_path, '*')))
-    w2ph_pickle_path = args.word2phoneme_dict_path
-    pickle_in = open(w2ph_pickle_path, 'rb')
-    word2phonemes = pickle.load(pickle_in)
-    pickle_in = open('files/phoneme2idx.pickle', 'rb')
-    phoneme2idx = pickle.load(pickle_in)
-
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
-    device_printed = 'GPU' if torch.cuda.is_available() else 'CPU'
-    print('Running model on {}.'.format(device_printed))
-
-    # load model
-    lyrics_aligner = model.InformedOpenUnmix3().to(device)
-    state_dict = torch.load('checkpoint/base/model_parameters.pth', map_location=device)
-    lyrics_aligner.load_state_dict(state_dict)
-
-    if args.onsets in ['p', 'pw']:
-        os.makedirs('outputs/{}/phoneme_onsets'.format(args.dataset_name), exist_ok=True)
-    if args.onsets in ['w', 'pw']:
-        os.makedirs('outputs/{}/word_onsets'.format(args.dataset_name), exist_ok=True)
-
-    for audio_file_path in audio_files:
-
-        audio_file = os.path.basename(audio_file_path)
-        print('Processing {} ...'.format(audio_file))
-        file_name, ext = os.path.splitext(audio_file)
-
-        # get corresponding lyrics file
-        lyrics_file_path = os.path.join(args.lyrics_path, file_name + '.txt')
-
-        if args.lyrics_format == 'w':
-            lyrics_phoneme_symbols, word_list = make_phoneme_and_word_list(lyrics_file_path, word2phonemes)
-        elif args.lyrics_format == 'p':
-            lyrics_phoneme_symbols = make_phoneme_list(lyrics_file_path)
-
-        lyrics_phoneme_idx = [phoneme2idx[p] for p in lyrics_phoneme_symbols]
-        phonemes_idx = torch.tensor(lyrics_phoneme_idx, dtype=torch.float32, device=device)[None, :]
-
-        # audio processing: load, resample, to mono, to torch
-        audio, sr = lb.load(audio_file_path, sr=16000, mono=True)
-        audio_torch = torch.tensor(audio, dtype=torch.float32, device=device)[None, None, :]
-
-        # compute alignment
-        # Todo: Change here
-        with torch.no_grad():
-            voice_estimate, _, scores = lyrics_aligner((audio_torch, phonemes_idx))
-            scores = scores.cpu()
-
-        if args.vad_threshold > 0:
-            # vocal activity detection
-            voice_estimate = voice_estimate[:, 0, 0, :].cpu().numpy().T
-            vocals_mag = np.sum(voice_estimate, axis=0)
-
-            # frames with vocal magnitude below threshold are considered silence
-            predicted_silence = np.nonzero(vocals_mag < args.vad_threshold)
-
-            is_space_token = torch.nonzero(phonemes_idx == 3, as_tuple=True)
-
-            # set score of space tokens to high value in silent frames
-            for n in predicted_silence[0]:
-                scores[:, n, is_space_token[1]] = scores.max()
-
-        optimal_path = optimal_alignment_path(scores)
-        phoneme_onsets = compute_phoneme_onsets(optimal_path, hop_length=256, sampling_rate=16000)
-
-        if args.onsets in ['p', 'pw']:
-            # save phoneme onsets
-            p_file = open('outputs/{}/phoneme_onsets/{}.txt'.format(args.dataset_name, file_name), 'a')
-            for m, symb in enumerate(lyrics_phoneme_symbols):
-                p_file.write(symb + '\t' + str(phoneme_onsets[m]) + '\n')
-            p_file.close()
-
-        if args.onsets in ['w', 'pw']:
-            word_onsets, word_offsets = compute_word_alignment(lyrics_phoneme_symbols, phoneme_onsets)
-
-            # save word onsets
-            w_file = open('outputs/{}/word_onsets/{}.txt'.format(args.dataset_name, file_name), 'a')
-            for m, word in enumerate(word_list):
-                w_file.write(word + '\t' + str(word_onsets[m]) + '\n')
-            w_file.close()
-
-        print('Done.')
+def compute_hard_alignment(scores, lyrics_phoneme_symbols):
+    optimal_path = optimal_alignment_path(scores)
+    phoneme_onsets = compute_phoneme_onsets(optimal_path, hop_length=256, sampling_rate=16000)
+    word_onsets, word_offsets = compute_word_alignment(lyrics_phoneme_symbols, phoneme_onsets)
+    return phoneme_onsets, word_onsets, word_offsets
 
 
-def compute_hard_alignment(scores, lyrics_phoneme_symbols, file_name, word_list):
+def save_hard_alignment(scores, lyrics_phoneme_symbols, file_name, word_list):
     optimal_path = optimal_alignment_path(scores)
     phoneme_onsets = compute_phoneme_onsets(optimal_path, hop_length=256, sampling_rate=16000)
 
@@ -286,60 +207,166 @@ def compute_hard_alignment(scores, lyrics_phoneme_symbols, file_name, word_list)
         w_file.close()
 
 
+# Function to save model checkpoints
+def save_checkpoint(model, run_name, epoch, steps, wandb):
+    path = os.path.join("checkpoint", run_name)
+    os.makedirs(path, exist_ok=True)
+    filename = f'model_epoch_{epoch}_step_{steps}.pth' if epoch \
+        else 'model_final.pth'
+    full_path = os.path.join(path, filename)
+    # Save locally
+    torch.save(model.state_dict(), full_path)
+    # Save on wandb - make sure the file is in the current directory or subdirectory.
+    wandb.save(full_path)
+
+
+# Function to perform training step and return loss
+def train_step(lyrics_aligner, audio, phonemes_idx, alpha_tensor, optimizer, loss_fn):
+    alpha_t_hat, scores = lyrics_aligner((audio, phonemes_idx))
+    alpha_tensor = alpha_tensor.to_dense()
+    alpha_tensor = alpha_tensor.permute((0, 2, 1))
+    alpha_t_hat_flattened = alpha_t_hat.view(-1, alpha_t_hat.shape[-1])
+    alpha_tensor_flattened = alpha_tensor.view(-1, alpha_tensor.shape[-1])
+    loss = loss_fn(torch.log(alpha_t_hat_flattened + 1e-6), alpha_tensor_flattened)
+    loss.backward()
+    optimizer.step()
+    return loss, scores
+
+
+# Function to compute alignment MSE
+def compute_alignment_mse(scores, phonemes, start_time):
+    if type(start_time[0]) == torch.Tensor:
+        start_time = list(map(lambda x: x.item(), start_time))
+    detached_scores = scores.detach()
+    lyrics_phoneme_symbols = list(map(lambda x: x[0], phonemes))
+    h_phoneme_onsets, h_word_onsets, h_word_offsets = compute_hard_alignment(detached_scores, lyrics_phoneme_symbols)
+    alignment_mse = np.mean((np.array(h_word_onsets) - np.array(start_time)) ** 2)
+    return alignment_mse
+
+
 def train(args):
+    wandb.login(key="d2a2655d23be9c5fbe4d08ec428930c2c887d09f")
     num_epochs = args.epochs
+    save_steps = args.save_steps
+    run_name = args.run_name
+    learning_rate = 1e-5  # Define learning rate as a variable for logging
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print('Running model on {}.'.format(device))
 
-    # load model
+    # Init Wandb
+    project_name = 'lyrics_aligner' if torch.cuda.is_available() else 'lyrics_aligner_dev_macbook'
+    run = wandb.init(project=project_name, name=args.run_name, config={
+        'num_epochs': num_epochs,
+        'save_steps': save_steps,
+        'learning_rate': learning_rate,
+    })
+
+    # Load model
     lyrics_aligner = model.InformedOpenUnmix3().to(device)
     state_dict = torch.load('checkpoint/base/model_parameters.pth', map_location=device)
     lyrics_aligner.load_state_dict(state_dict)
 
-    # load dataset
-    dataset = AriaDataset(path="dataset/")
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
+    # Watch the model
+    wandb.watch(lyrics_aligner, log='all')  # Log all gradients and model parameters
 
-    # loss function
-    loss_fn = nn.CrossEntropyLoss()
+    # Define the baseline model for training comparison
+    baseline = copy.deepcopy(lyrics_aligner)
+
+    # Load dataset
+    full_dataset = AriaDataset(path="dataset/")
+
+    # Perform the split
+    train_size = len(full_dataset) - 1
+    test_size = 1
+    train_dataset, test_dataset = random_split(full_dataset, [train_size, test_size])
+    dataloader = DataLoader(train_dataset, batch_size=1, shuffle=True)
+
+    # Loss function
+    loss_fn = nn.KLDivLoss()
 
     # Optimizer
-    optimizer = Adam(lyrics_aligner.parameters(), lr=1e-3)
+    optimizer = Adam(lyrics_aligner.parameters(), lr=learning_rate)
 
+    # Load (phoneme -> index) dictionary
     pickle_in = open('files/phoneme2idx.pickle', 'rb')
     phoneme2idx = pickle.load(pickle_in)
+    steps = 0
 
     for epoch in range(num_epochs):
-        # TODO: Remove the unwanted variables later when the training loop is working
         for name, audio, phonemes, sr, audio_duration, words, start_time, end_time, word_start_indexes, word_end_indexes, w2ph_dict, alpha_tensor in dataloader:
-            # 'phonemes' is a list of tuples, for now I am just taking the first element from that tuple using ph[0]
+            if name[0] == "aria_violetta":
+                continue
             lyrics_phoneme_idx = [phoneme2idx[ph[0]] for ph in phonemes]
             phonemes_idx = torch.tensor(lyrics_phoneme_idx, dtype=torch.float32, device=device)[None, :]
-            alpha_t_hat, scores = lyrics_aligner((audio, phonemes_idx))
-            # TODO: Profile this step if it makes sense to do it on each iteration vs storing big tensors.
-            alpha_tensor = alpha_tensor.to_dense()
-            alpha_tensor = alpha_tensor.permute((0, 2, 1))
-            loss = loss_fn(alpha_tensor, alpha_t_hat)
-            print(f"Loss computed: {loss}. Running back pass now.")
-            loss.backward()
-            print("Backpass success!")
-            optimizer.step()
-            print("Optimizer update success!")
-            print('Done.')
+
+            # Training step
+            loss, scores = train_step(lyrics_aligner, audio, phonemes_idx, alpha_tensor, optimizer, loss_fn)
+
+            # Save checkpoint
+            steps += 1
+            if steps % save_steps == 0:
+                save_checkpoint(lyrics_aligner, run_name, epoch, steps, wandb)
+
+            # Compute alignment MSE
+            alignment_mse = compute_alignment_mse(scores, phonemes, start_time)
+
+            # Log metrics to wandb
+            wandb.log({
+                'Training Loss': loss.item(),
+                'Training Alignment MSE': alignment_mse,
+                'Epoch': epoch,
+                'Step': steps,
+            })
+
+    # Comparison with baseline model on test set
+    with torch.no_grad():
+        trained_model_mse_total = 0
+        baseline_model_mse_total = 0
+        total_samples = 0
+        for name, audio, phonemes, sr, audio_duration, words, start_time, end_time, word_start_indexes, word_end_indexes, w2ph_dict, alpha_tensor in test_dataset:
+            audio = torch.Tensor(audio)
+            audio = audio[None, :]
+            # Get model statistics over the test also comparing with the baseline
+            lyrics_phoneme_idx = [phoneme2idx[ph] for ph in phonemes]
+            phonemes_idx = torch.tensor(lyrics_phoneme_idx, dtype=torch.float32, device=device)[None, :]
+
+            # Predict using the trained model
+            _, scores = lyrics_aligner((audio.to(device), phonemes_idx))
+
+            # Predict using the baseline model
+            _, baseline_scores = baseline((audio.to(device), phonemes_idx))
+
+            # Compute alignment MSE for the trained model and the baseline model and add to total
+            trained_model_mse_total += compute_alignment_mse(scores, phonemes, start_time)
+            baseline_model_mse_total += compute_alignment_mse(baseline_scores, phonemes, start_time)
+
+            total_samples += 1
+
+        # Compute average MSE
+        avg_trained_model_mse = trained_model_mse_total / total_samples
+        avg_baseline_model_mse = baseline_model_mse_total / total_samples
+
+        # Log the average MSE scores to wandb
+        wandb.log({
+            'Average Trained Model MSE': avg_trained_model_mse,
+            'Average Baseline Model MSE': avg_baseline_model_mse,
+            'Total Samples': total_samples,
+        })
+
+    # Save final model
+    # save_checkpoint(lyrics_aligner, run_name, None, None, wandb)
+
+    # End the wandb run
+    run.finish()
 
 
 if __name__ == "__main__":
+    writer = SummaryWriter('runs/training_logs')
     parser = argparse.ArgumentParser(description='Lyrics aligner')
     parser.add_argument('--epochs', type=int, default=10)
-    parser.add_argument('--audio_path', type=str, default="dataset/aria_violetta/audio")
-    parser.add_argument('--lyrics_path', type=str, default="dataset/aria_violetta/text")
-    parser.add_argument('--word2phoneme_dict_path', type=str, default="dataset/aria_violetta/word2phonemes.pickle")
-    parser.add_argument('--lyrics-format', type=str, choices=['w', 'p'], default='w')
-    parser.add_argument('--onsets', type=str, choices=['p', 'w', 'pw'], default='p')
-    parser.add_argument('--dataset-name', type=str, default='dataset1')
-    parser.add_argument('--vad-threshold', type=float, default=0)
+    parser.add_argument('--save_steps', type=int, default=float('inf'))
+    parser.add_argument('--run_name', type=str, default=datetime.now().strftime("%m%d_%H%M"))
     args = parser.parse_args()
 
     train(args)
-    # old_align(args)

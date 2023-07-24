@@ -185,10 +185,10 @@ def create_sparse_alpha_tensor_from_labels(words, w2ph_dict, sample_rate, start_
 
     Returns:
         sparse_alpha_tensor (torch.sparse.FloatTensor): A sparse tensor where each column represents a frame, and the
-                                                        non-zero entries in that column are the indices of the phonemes
-                                                        present in that frame (with flipped x-coordinate indexing).
+                                                        rows represent the phonemes present in that frame.
                                                         The value at each non-zero entry is the corresponding softmax
-                                                        probability of that phoneme in that frame.
+                                                        probability of that phoneme in that frame. This tensor is
+                                                        returned as a Sparse Tensor.
     """
 
     # sample_rate, song_duration = sample_rate.item(), song_duration.item()
@@ -220,8 +220,12 @@ def create_sparse_alpha_tensor_from_labels(words, w2ph_dict, sample_rate, start_
     values = []
     for frame_idx, frame in enumerate(phonemes_in_stft_frames):
         for phoneme_idx, phoneme in enumerate(frame):
-            # In your indexing system, the x-coordinate (frame index) is flipped
-            indices.append([total_phonemes - phoneme - 1, frame_idx])
+            # # In your indexing system, the x-coordinate (frame index) is flipped
+            # indices.append([total_phonemes - phoneme - 1, frame_idx])
+            # values.append(percentages[frame_idx][phoneme_idx])
+
+            # Now using normal x-coordinate indexing
+            indices.append([phoneme, frame_idx])
             values.append(percentages[frame_idx][phoneme_idx])
 
     # Convert to tensors
@@ -269,7 +273,7 @@ class AriaDataset(Dataset):
         - song.mp3: An audio file of the song.
         - song.txt: A text file containing the lyrics of the song. Each word should be separated by a space.
         - labels.tsv: A tab-separated file containing the start and end times of each word in the song.
-                        The file should contain header lines.
+                        The file should contain header lines [Text	Start Time	End Time].
         - word2phonemes.pickle: A pickle file that maps each word to its corresponding phonemes.
 
         Args:
@@ -307,7 +311,7 @@ class AriaDataset(Dataset):
                 w2ph_dict = {k: v.split() for k, v in w2ph_dict.items()}
             # Load audio file using librosa
             audio, sr = librosa.load(audio_file_path, sr=16000, mono=True)
-            audio_duration = librosa.get_duration(audio, sr)
+            audio_duration = librosa.get_duration(y=audio, sr=sr)
 
             # Read text file as a list of words
             with open(text_file_path, 'r') as text_file:
