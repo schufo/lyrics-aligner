@@ -9,7 +9,6 @@ import wandb as wandb
 from torch import nn
 from torch.optim import Adam
 from torch.utils.data import DataLoader, random_split
-from torch.utils.tensorboard import SummaryWriter
 import model
 import argparse
 import os
@@ -362,7 +361,6 @@ def train(args):
 
 
 if __name__ == "__main__":
-    writer = SummaryWriter('runs/training_logs')
     parser = argparse.ArgumentParser(description='Lyrics aligner')
     parser.add_argument('--epochs', type=int, default=10)
     parser.add_argument('--save_steps', type=int, default=float('inf'))
