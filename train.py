@@ -3,7 +3,7 @@ Generates .txt-files with phoneme and/or word onsets.
 """
 import copy
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import torch
 import numpy as np
 import wandb as wandb
@@ -258,20 +258,13 @@ def train(args):
 
     # Init Wandb
     project_name = 'lyrics_aligner' if torch.cuda.is_available() else 'lyrics_aligner_dev_macbook'
-    try:
-        run = wandb.init(project=project_name, name=args.run_name, config={
-            'num_epochs': num_epochs,
-            'save_steps': save_steps,
-            'learning_rate': learning_rate,
-        })
-    except wandb.errors.CommError:
-        print("Trying to run wandb in offline mode.")
-        run = wandb.init(project=project_name, name=args.run_name, mode='offline', config={
-            'num_epochs': num_epochs,
-            'save_steps': save_steps,
-            'learning_rate': learning_rate,
-        })
-
+    param_config = {
+        'num_epochs': num_epochs,
+        'save_steps': save_steps,
+        'learning_rate': learning_rate,
+    }
+    print(param_config)
+    run = wandb.init(project=project_name, name=args.run_name, config=param_config)
     # Load model
     lyrics_aligner = model.InformedOpenUnmix3().to(device)
     state_dict = torch.load('checkpoint/base/model_parameters.pth', map_location=device)
@@ -302,9 +295,10 @@ def train(args):
     pickle_in = open('files/phoneme2idx.pickle', 'rb')
     phoneme2idx = pickle.load(pickle_in)
     steps = 0
-
+    train_start_time = time.time()
     for epoch in range(num_epochs):
         for name, audio, phonemes, sr, audio_duration, words, start_time, end_time, word_start_indexes, word_end_indexes, w2ph_dict, alpha_tensor in dataloader:
+            print(f"Training on {name}, epoch {epoch}")
             lyrics_phoneme_idx = [phoneme2idx[ph[0]] for ph in phonemes]
             phonemes_idx = torch.tensor(lyrics_phoneme_idx, dtype=torch.float32, device=device)[None, :]
 
@@ -315,6 +309,7 @@ def train(args):
             # Save checkpoint
             steps += 1
             if steps % save_steps == 0:
+                print(f"Saving checkpoint after {steps} steps")
                 save_checkpoint(lyrics_aligner, run_name, epoch, steps, wandb)
 
             # Compute alignment MSE
@@ -328,13 +323,17 @@ def train(args):
                 'Step': steps,
                 'Backward Pass Time': backward_time
             })
-
+    train_end_time = time.time()
+    train_total_time = timedelta(seconds=train_end_time - train_start_time)
+    print(f"Training complete in {str(train_total_time)}.")
     # Comparison with baseline model on test set
     with torch.no_grad():
+        print("Evaluating the model on test set")
         trained_model_mse_total = 0
         baseline_model_mse_total = 0
         total_samples = 0
         for name, audio, phonemes, sr, audio_duration, words, start_time, end_time, word_start_indexes, word_end_indexes, w2ph_dict, alpha_tensor in test_dataset:
+            print(f"Evaluating on {name}.")
             audio = torch.Tensor(audio)
             audio = audio[None, :]
             # Get model statistics over the test also comparing with the baseline
@@ -348,15 +347,21 @@ def train(args):
             _, baseline_scores = baseline((audio.to(device), phonemes_idx))
 
             # Compute alignment MSE for the trained model and the baseline model and add to total
-            trained_model_mse_total += compute_alignment_mse(scores, phonemes, start_time)
-            baseline_model_mse_total += compute_alignment_mse(baseline_scores, phonemes, start_time)
-
+            # Compute MSE for Trained Model
+            trained_model_mse = compute_alignment_mse(scores, phonemes, start_time)
+            trained_model_mse_total += trained_model_mse
+            print(f"Trained Model MSE for {name}: {trained_model_mse}")
+            # Compute MSE for Baseline Model
+            baseline_model_mse = compute_alignment_mse(baseline_scores, phonemes, start_time)
+            baseline_model_mse_total += baseline_model_mse
+            print(f"Baseline Model MSE for {name}: {baseline_model_mse}")
             total_samples += 1
 
         # Compute average MSE
         avg_trained_model_mse = trained_model_mse_total / total_samples
         avg_baseline_model_mse = baseline_model_mse_total / total_samples
-
+        print(f"Average Trained Model MSE: {avg_trained_model_mse}")
+        print(f"Average Baseline Model MSE: {avg_baseline_model_mse}")
         # Log the average MSE scores to wandb
         wandb.log({
             'Average Trained Model MSE': avg_trained_model_mse,
@@ -365,7 +370,8 @@ def train(args):
         })
 
     # Save final model
-    # save_checkpoint(lyrics_aligner, run_name, None, None, wandb)
+    print("Saving final checkpoint")
+    save_checkpoint(lyrics_aligner, run_name, None, None, wandb)
 
     # End the wandb run
     run.finish()
