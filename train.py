@@ -2,6 +2,7 @@
 Generates .txt-files with phoneme and/or word onsets.
 """
 import copy
+import time
 from datetime import datetime
 import torch
 import numpy as np
@@ -227,9 +228,12 @@ def train_step(lyrics_aligner, audio, phonemes_idx, alpha_tensor, optimizer, los
     alpha_t_hat_flattened = alpha_t_hat.view(-1, alpha_t_hat.shape[-1])
     alpha_tensor_flattened = alpha_tensor.view(-1, alpha_tensor.shape[-1])
     loss = loss_fn(torch.log(alpha_t_hat_flattened + 1e-6), alpha_tensor_flattened)
+    # Start timing
+    start_time = time.time()
     loss.backward()
+    backward_time = time.time() - start_time
     optimizer.step()
-    return loss, scores
+    return loss, scores, backward_time
 
 
 # Function to compute alignment MSE
@@ -308,7 +312,7 @@ def train(args):
 
             # Training step
             audio, alpha_tensor = audio.to(device), alpha_tensor.to(device)
-            loss, scores = train_step(lyrics_aligner, audio, phonemes_idx, alpha_tensor, optimizer, loss_fn)
+            loss, scores, backward_time = train_step(lyrics_aligner, audio, phonemes_idx, alpha_tensor, optimizer, loss_fn)
 
             # Save checkpoint
             steps += 1
@@ -324,6 +328,7 @@ def train(args):
                 'Training Alignment MSE': alignment_mse,
                 'Epoch': epoch,
                 'Step': steps,
+                'Backward Pass Time': backward_time
             })
 
     # Comparison with baseline model on test set
