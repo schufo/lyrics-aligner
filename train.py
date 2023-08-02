@@ -254,11 +254,19 @@ def train(args):
 
     # Init Wandb
     project_name = 'lyrics_aligner' if torch.cuda.is_available() else 'lyrics_aligner_dev_macbook'
-    run = wandb.init(project=project_name, name=args.run_name, config={
-        'num_epochs': num_epochs,
-        'save_steps': save_steps,
-        'learning_rate': learning_rate,
-    })
+    try:
+        run = wandb.init(project=project_name, name=args.run_name, config={
+            'num_epochs': num_epochs,
+            'save_steps': save_steps,
+            'learning_rate': learning_rate,
+        })
+    except wandb.errors.CommError:
+        print("Trying to run wandb in offline mode.")
+        run = wandb.init(project=project_name, name=args.run_name, mode='offline', config={
+            'num_epochs': num_epochs,
+            'save_steps': save_steps,
+            'learning_rate': learning_rate,
+        })
 
     # Load model
     lyrics_aligner = model.InformedOpenUnmix3().to(device)
