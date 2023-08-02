@@ -236,7 +236,7 @@ def train_step(lyrics_aligner, audio, phonemes_idx, alpha_tensor, optimizer, los
 def compute_alignment_mse(scores, phonemes, start_time):
     if type(start_time[0]) == torch.Tensor:
         start_time = list(map(lambda x: x.item(), start_time))
-    detached_scores = scores.detach()
+    detached_scores = scores.detach().cpu()
     lyrics_phoneme_symbols = list(map(lambda x: x[0], phonemes))
     h_phoneme_onsets, h_word_onsets, h_word_offsets = compute_hard_alignment(detached_scores, lyrics_phoneme_symbols)
     alignment_mse = np.mean((np.array(h_word_onsets) - np.array(start_time)) ** 2)
