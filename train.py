@@ -305,8 +305,6 @@ def train(args):
 
     for epoch in range(num_epochs):
         for name, audio, phonemes, sr, audio_duration, words, start_time, end_time, word_start_indexes, word_end_indexes, w2ph_dict, alpha_tensor in dataloader:
-            if name[0] == "aria_violetta":
-                continue
             lyrics_phoneme_idx = [phoneme2idx[ph[0]] for ph in phonemes]
             phonemes_idx = torch.tensor(lyrics_phoneme_idx, dtype=torch.float32, device=device)[None, :]
 
@@ -375,7 +373,7 @@ def train(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Lyrics aligner')
-    parser.add_argument('--epochs', type=int, default=10)
+    parser.add_argument('--epochs', type=int, default=1)
     parser.add_argument('--save_steps', type=int, default=float('inf'))
     parser.add_argument('--run_name', type=str, default=datetime.now().strftime("%m%d_%H%M"))
     args = parser.parse_args()
