@@ -307,6 +307,7 @@ def train(args):
             phonemes_idx = torch.tensor(lyrics_phoneme_idx, dtype=torch.float32, device=device)[None, :]
 
             # Training step
+            audio, alpha_tensor = audio.to(device), alpha_tensor.to(device)
             loss, scores = train_step(lyrics_aligner, audio, phonemes_idx, alpha_tensor, optimizer, loss_fn)
 
             # Save checkpoint
