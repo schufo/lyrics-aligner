@@ -423,7 +423,10 @@ if __name__ == "__main__":
     parser.add_argument('--epochs', type=int, default=1)
     parser.add_argument('--save_steps', type=int, default=float('inf'))
     parser.add_argument('--run_name', type=str, default=datetime.now().strftime("%m%d_%H%M"))
+    parser.add_argument("--forward_pass_sanity", action="store_true",
+                        help="Runs just a single forward pass as a sanity check.")
     args = parser.parse_args()
-
-    # train(args)
-    forward_sanity_test()
+    if args.forward_pass_sanity:
+        forward_sanity_test()
+    else:
+        train(args)
