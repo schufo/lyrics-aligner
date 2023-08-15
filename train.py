@@ -220,6 +220,11 @@ def save_checkpoint(model, run_name, epoch, steps, wandb):
     wandb.save(full_path)
 
 
+def forward_pass(lyrics_aligner, audio, phonemes_idx):
+    alpha_t_hat, scores = lyrics_aligner((audio, phonemes_idx))
+    return alpha_t_hat, scores
+
+
 # Function to perform training step and return loss
 def train_step(lyrics_aligner, audio, phonemes_idx, alpha_tensor, optimizer, loss_fn):
     alpha_t_hat, scores = lyrics_aligner((audio, phonemes_idx))
@@ -245,6 +250,35 @@ def compute_alignment_mse(scores, phonemes, start_time):
     h_phoneme_onsets, h_word_onsets, h_word_offsets = compute_hard_alignment(detached_scores, lyrics_phoneme_symbols)
     alignment_mse = np.mean((np.array(h_word_onsets) - np.array(start_time)) ** 2)
     return alignment_mse
+
+
+def forward_sanity_test(model_checkpoint="checkpoint/base/model_parameters.pth", dataset_path="dataset/"):
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    print('Running model on {}.'.format(device))
+    lyrics_aligner = model.InformedOpenUnmix3().to(device)
+    state_dict = torch.load(model_checkpoint, map_location=device)
+    lyrics_aligner.load_state_dict(state_dict)
+    w2ph_dict_path = dataset_path + "word2phonemeglobal.pickle"
+    w2ph_file = open(w2ph_dict_path, "rb")
+    w2phoneme_dict = pickle.load(w2ph_file)
+    full_dataset = AriaDataset(path=dataset_path, word2phoneme_dict=w2phoneme_dict)
+    dataloader = DataLoader(full_dataset, batch_size=1, shuffle=False)
+    pickle_in = open('files/phoneme2idx.pickle', 'rb')
+    phoneme2idx = pickle.load(pickle_in)
+    for name, audio, phonemes, sr, audio_duration, words, start_time, end_time, word_start_indexes, word_end_indexes, alpha_tensor in dataloader:
+        lyrics_phoneme_idx = [phoneme2idx[ph[0]] for ph in phonemes]
+        phonemes_idx = torch.tensor(lyrics_phoneme_idx, dtype=torch.float32, device=device)[None, :]
+
+        # Training step
+        audio, alpha_tensor = audio.to(device), alpha_tensor.to(device)
+        alpha_t_hat, scores = forward_pass(lyrics_aligner, audio, phonemes_idx)
+        # Compute alignment MSE
+        detached_scores = scores.detach().cpu()
+        lyrics_phoneme_symbols = list(map(lambda x: x[0], phonemes))
+        h_phoneme_onsets, h_word_onsets, h_word_offsets = compute_hard_alignment(detached_scores,
+                                                                                 lyrics_phoneme_symbols)
+        print(f"Forward Pass successful for {name}. Printing predicted word onsets.")
+        print(h_word_onsets)
 
 
 def train(args):
@@ -277,7 +311,12 @@ def train(args):
     baseline = copy.deepcopy(lyrics_aligner)
 
     # Load dataset
-    full_dataset = AriaDataset(path="dataset/")
+    dataset_path = "dataset/"
+    w2ph_dict_path = dataset_path + "word2phonemeglobal.pickle"
+    w2ph_file = open(w2ph_dict_path, "rb")
+    w2phoneme_dict = pickle.load(w2ph_file)
+
+    full_dataset = AriaDataset(path=dataset_path, word2phoneme_dict=w2phoneme_dict)
 
     # Perform the split
     train_size = len(full_dataset) - 1
@@ -297,7 +336,7 @@ def train(args):
     steps = 0
     train_start_time = time.time()
     for epoch in range(num_epochs):
-        for name, audio, phonemes, sr, audio_duration, words, start_time, end_time, word_start_indexes, word_end_indexes, w2ph_dict, alpha_tensor in dataloader:
+        for name, audio, phonemes, sr, audio_duration, words, start_time, end_time, word_start_indexes, word_end_indexes, alpha_tensor in dataloader:
             print(f"Training on {name}, epoch {epoch}")
             lyrics_phoneme_idx = [phoneme2idx[ph[0]] for ph in phonemes]
             phonemes_idx = torch.tensor(lyrics_phoneme_idx, dtype=torch.float32, device=device)[None, :]
@@ -305,6 +344,8 @@ def train(args):
             # Training step
             audio, alpha_tensor = audio.to(device), alpha_tensor.to(device)
             loss, scores, backward_time = train_step(lyrics_aligner, audio, phonemes_idx, alpha_tensor, optimizer, loss_fn)
+            backward_time = str(timedelta(seconds=backward_time))
+            print(f"Backward pass time = {backward_time} for batch size: {audio.shape[0]}")
 
             # Save checkpoint
             steps += 1
@@ -332,7 +373,7 @@ def train(args):
         trained_model_mse_total = 0
         baseline_model_mse_total = 0
         total_samples = 0
-        for name, audio, phonemes, sr, audio_duration, words, start_time, end_time, word_start_indexes, word_end_indexes, w2ph_dict, alpha_tensor in test_dataset:
+        for name, audio, phonemes, sr, audio_duration, words, start_time, end_time, word_start_indexes, word_end_indexes, alpha_tensor in test_dataset:
             print(f"Evaluating on {name}.")
             audio = torch.Tensor(audio)
             audio = audio[None, :]
@@ -384,4 +425,5 @@ if __name__ == "__main__":
     parser.add_argument('--run_name', type=str, default=datetime.now().strftime("%m%d_%H%M"))
     args = parser.parse_args()
 
-    train(args)
+    # train(args)
+    forward_sanity_test()

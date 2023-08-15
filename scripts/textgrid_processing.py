@@ -1,7 +1,102 @@
+import os
 import pickle
 from typing import List, Optional
 import textgrid
-from util import clean_words
+from textgrid import TextGrid, IntervalTier
+
+from util import clean_words, is_compound_word, subdivide, resolve_conflicts, create_lyrics_from_labels, create_tsv_file
+
+
+def get_word_tuples_from_tg(textgrid_filepath):
+    """
+
+    Args:
+        textgrid_filepath:
+
+    Returns: Word tuple is a list of tuples (word_str, start_time, end_time) which are the labels for a text grid file.
+
+    """
+    word_labels = []
+    tg = textgrid.TextGrid.fromFile(textgrid_filepath)
+    for tier in tg:
+        for interval in tier:
+            text = interval.mark
+            start_time = interval.minTime
+            end_time = interval.maxTime
+            if is_compound_word(text):
+                # Equally divide the interval for each word in the compound word
+                subdivisions = subdivide(text, start_time, end_time)
+                for w, s, e in subdivisions:
+                    word_labels.append((w, s, e))
+            else:
+                text = text.replace(" ", "")
+                if not text:
+                    print(f"Empty annotation.")
+                    continue
+                word_labels.append((text, start_time, end_time))
+    return word_labels
+
+
+def create_labels_from_textgrid(textgrid_filepath):
+    word_tuples = get_word_tuples_from_tg(textgrid_filepath)
+    word_tuples = sorted(word_tuples, key=lambda x: x[1])
+    resolved_word_tuples = resolve_conflicts(word_tuples)
+    final_labels = list(map(lambda x: (clean_words(x[0]), round(x[1], 2), round(x[2], 2)), resolved_word_tuples))
+    return final_labels
+
+
+def create_labels_from_multiple_textgrid(textgrid_filepath_arr):
+    final_labels = []
+    for textgrid_filepath in textgrid_filepath_arr:
+        part_labels = create_labels_from_textgrid(textgrid_filepath)
+        final_labels += part_labels
+    return final_labels
+
+
+
+def create_textgrid(word_tuples, tier_name='words'):
+    # Create an empty TextGrid
+    grid = TextGrid()
+
+    # Calculate the max end time to set the TextGrid maxTime
+    max_end_time = max(word_tuples, key=lambda x: x[2])[2]
+    grid.maxTime = max_end_time
+
+    # Create an IntervalTier
+    tier = IntervalTier(name=tier_name, maxTime=max_end_time)
+
+    # Add each word to the IntervalTier
+    for word, start_time, end_time in word_tuples:
+        tier.add(start_time, end_time, word)
+
+    # Add the IntervalTier to the TextGrid
+    grid.append(tier)
+
+    return grid
+
+
+def combine_textgrid_files_and_return_labels(file_list):
+    word_labels = []
+    for i, file_path in enumerate(file_list):
+        tg = textgrid.TextGrid.fromFile(file_path)
+        for tier in tg:
+            for interval in tier:
+                text = interval.mark
+                start_time = interval.minTime
+                end_time = interval.maxTime
+                if is_compound_word(text):
+                    # Equally divide the interval for each word in the compound word
+                    subdivisions = subdivide(text, start_time, end_time)
+                    for w, s, e in subdivisions:
+                        word_labels.append((w, s, e))
+                else:
+                    text = text.replace(" ", "")
+                    if not text:
+                        print(f"Empty annotation.")
+                        continue
+                    word_labels.append((text, start_time, end_time))
+
+    return word_labels
 
 
 def _word_timestamps_from_phoneme_timestamps(phoneme_onset, word2phoneme, lyrics) -> List[tuple]:
@@ -147,19 +242,41 @@ def create_textgrid_file_from_model_output_resume(filepath: str, ass_obj,
     print(f"Text grid file created at {filepath}")
 
 
-def create_dataset_from_textgrid_files(filepaths: List[str]) -> None:
-    raise NotImplementedError
-
-
 if __name__ == "__main__":
-    filepath = "/Users/pushkarjajoria/Desktop/Violetta/violetta_james.TextGrid"
-    phoneme_output_file = "../arias/violetta/phoneme_model_output.txt"
-    word_to_phoneme_dict = "../arias/violetta/word2phonemes.pickle"
-    sung_text = "../arias/violetta/sung_text.txt"
-    import ass
+    """
+    Single Textgrid file for a single folder.
+    """
+    textgrid_files = ["../dataset/casta_diva/Casta diva_Norma.TextGrid"]
+    for tg_file_path in textgrid_files:
+        aria_folder = os.path.dirname(tg_file_path)
+        labels = create_labels_from_textgrid(tg_file_path)
+        # Save labels in tsv
+        # Generate filepath based on Dataset structure.
+        filepath = aria_folder + "/labels.tsv"
+        create_tsv_file(labels, filepath)
 
-    with open("/Users/pushkarjajoria/Downloads/Archive/word_timestamps.ass", encoding='utf_8_sig') as handle:
-        ass_obj = ass.parse(handle)
-    create_textgrid_file_from_model_output_resume(filepath, ass_obj, model_phoneme_output_file=phoneme_output_file,
-                                                  w2p_dict_file_path=word_to_phoneme_dict,
-                                                  lyrics_file_path=sung_text)
+        # Creating lyrics from labels.
+        lyrics_filepath = aria_folder + "/text/song.txt"    # As per the dataset structure
+        # Save lyrics in text file as per Dataset structure.
+        list_of_words = list(map(lambda x: x[0], labels))
+        lyrics = create_lyrics_from_labels(list_of_words, lyrics_filepath)
+
+
+# if __name__ == "__main__":
+#     """
+#     Multiple textgrid files for a single folder
+#     """
+#     textgrid_parts = ["/Users/pushkarjajoria/Desktop/Aria data prep/pari_siamo/Rigoletto_PariSiamo_0_212.TextGrid",
+#                       "/Users/pushkarjajoria/Desktop/Aria data prep/pari_siamo/Rigoletto_PariSiamo_213_240.TextGrid"]
+#     labels = create_labels_from_multiple_textgrid(textgrid_parts)
+#     aria_folder = os.path.dirname(textgrid_parts[0])
+#     # Save labels in tsv
+#     # Generate filepath based on Dataset structure.
+#     filepath = aria_folder + "/labels.tsv"
+#     create_tsv_file(labels, filepath)
+#
+#     # Creating lyrics from labels.
+#     lyrics_filepath = aria_folder + "/text/song.txt"  # As per the dataset structure
+#     # Save lyrics in text file as per Dataset structure.
+#     list_of_words = list(map(lambda x: x[0], labels))
+#     lyrics = create_lyrics_from_labels(list_of_words, lyrics_filepath)

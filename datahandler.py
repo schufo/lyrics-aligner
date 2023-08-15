@@ -8,7 +8,7 @@ from torch import Tensor
 from torch.utils.data import Dataset, DataLoader
 import pickle
 from typing import List, Tuple
-import bisect
+import Levenshtein
 
 
 def get_dataloader_obj(dataset_patt="dataset/", pickle_file="dataset/aria_dataset.pickle", batch_size=1, shuffle=True):
@@ -22,7 +22,7 @@ def get_dataloader_obj(dataset_patt="dataset/", pickle_file="dataset/aria_datase
     return dataloader
 
 
-def words_to_phonemes(words, w2ph_dict):
+def words_to_phonemes(words, w2ph_dict, folder_name):
     phonemes = []
     word_start_indexes = []
     word_end_indexes = []
@@ -31,12 +31,29 @@ def words_to_phonemes(words, w2ph_dict):
     for word in words:
         if word in w2ph_dict:
             phoneme_list = w2ph_dict[word]
-            phonemes.extend(phoneme_list)
-            word_start_indexes.append(start_idx)
-            word_end_indexes.append(start_idx+len(phoneme_list))
-            start_idx = start_idx+len(phoneme_list) + 1
         else:
-            raise KeyError(f"{word} is not present in the phonetic transcriptions")
+            print(f"Unable to find the match for word: {word} in Aria: {folder_name}")
+
+            # Find the closest words in the word2ph dictionary.
+            # Compute distances from target_key to each key in dictionary
+            distances = [(key, Levenshtein.distance(word, key)) for key in w2ph_dict.keys()]
+            # Sort by distance
+            sorted_distances = sorted(distances, key=lambda x: x[1])
+            # Print those words.
+            print("These are the closest 5 matches")
+            for i in range(5):
+                print(sorted_distances[i][0] + " -> " + " ".join(w2ph_dict[sorted_distances[i][0]]))
+            # Ask for the phoneme string from the user
+            phoneme_str = input(f'Enter the phoneme string for {word}: \n')
+
+            # Add the word to the dictionary
+            phoneme_list = phoneme_str.split(" ")
+            w2ph_dict[word] = phoneme_list
+        phonemes.extend(phoneme_list)
+        word_start_indexes.append(start_idx)
+        word_end_indexes.append(start_idx+len(phoneme_list))
+        start_idx = start_idx+len(phoneme_list) + 1
+
         phonemes.append(">")
     return phonemes, word_start_indexes, word_end_indexes
 
@@ -250,7 +267,7 @@ class Aria:
 
 
 class AriaDataset(Dataset):
-    def __init__(self, path, pickle_file='./dataset/aria_dataset.pickle', force_create=False):
+    def __init__(self, path, word2phoneme_dict, pickle_file='./dataset/aria_dataset.pickle', force_create=False):
         """
         Create the dataset by either loading it from the pickle file if it is provided else creates one using the path.
 
@@ -264,7 +281,7 @@ class AriaDataset(Dataset):
             ├── text/
             │   └── song.txt
             ├── labels.tsv
-            └── word2phonemes.pickle
+            └── word2phonemes.pickle [Deprecated] Not used directly.
 
         Folder Names:
         The name of the song dataset folder is used as the identifier for the dataset.
@@ -274,41 +291,28 @@ class AriaDataset(Dataset):
         - song.txt: A text file containing the lyrics of the song. Each word should be separated by a space.
         - labels.tsv: A tab-separated file containing the start and end times of each word in the song.
                         The file should contain header lines [Text	Start Time	End Time].
-        - word2phonemes.pickle: A pickle file that maps each word to its corresponding phonemes.
+        - [Depricated] w̶o̶r̶d̶2̶p̶h̶o̶n̶e̶m̶e̶s̶.̶p̶i̶c̶k̶l̶e̶: A̶ ̶p̶i̶c̶k̶l̶e̶ ̶f̶i̶l̶e̶ ̶t̶h̶a̶t̶ ̶m̶a̶p̶s̶ ̶e̶a̶c̶h̶ ̶w̶o̶r̶d̶ ̶t̶o̶ ̶i̶t̶s̶ ̶c̶o̶r̶r̶e̶s̶p̶o̶n̶d̶i̶n̶g̶ ̶p̶h̶o̶n̶e̶m̶e̶s̶.̶
+                                            Now there is a global word2phoneme file that has been combined from all.
 
         Args:
             path (str): The path to the directory containing the song datasets.
         """
         self.path = path
-        if pickle_file and os.path.isfile(pickle_file) and not force_create:
-            # TODO: Not working due to some UTF-8 issue, fix later
-            # Load the dataset from a pickle file
-            with open(pickle_file, 'r') as file:
-                dataset = pickle.load(file)
-                self.X = dataset.X
-                self.labels = dataset.labels
-                self.w2ph_dicts = dataset.w2ph_dicts
-                print("Successfully loaded the dataset from the pickle file")
-        else:
-            print("Creating the dataset, this may take a few minutes.")
-            self._create_dataset()
+        self.word2phoneme_dict = word2phoneme_dict
+        print("Creating the dataset, this may take a few minutes.")
+        self._create_dataset()
 
     def _create_dataset(self):
         self.X = []
         self.labels = []
-        self.w2ph_dicts = []
 
-        folders = os.listdir(self.path)
+        folders = [folder for folder in os.listdir(self.path) if os.path.isdir(os.path.join(self.path, folder))]
         for folder_name in folders:
             if folder_name in ['.DS_Store', "aria_dataset.pickle"]:
                 continue
             audio_file_path = os.path.join(self.path, folder_name, 'audio', 'song.mp3')
             text_file_path = os.path.join(self.path, folder_name, 'text', 'song.txt')
             labels_file_path = os.path.join(self.path, folder_name, 'labels.tsv')
-            phoneme_dict_path = os.path.join(self.path, folder_name, 'word2phonemes.pickle')
-            with open(phoneme_dict_path, 'rb') as f:
-                w2ph_dict = pickle.load(f)
-                w2ph_dict = {k: v.split() for k, v in w2ph_dict.items()}
             # Load audio file using librosa
             audio, sr = librosa.load(audio_file_path, sr=16000, mono=True)
             audio_duration = librosa.get_duration(y=audio, sr=sr)
@@ -316,9 +320,8 @@ class AriaDataset(Dataset):
             # Read text file as a list of words
             with open(text_file_path, 'r') as text_file:
                 words = text_file.read().split()
-                phonemes, word_start_indexes, word_end_indexes = words_to_phonemes(words, w2ph_dict)
+                phonemes, word_start_indexes, word_end_indexes = words_to_phonemes(words, self.word2phoneme_dict, folder_name)
             self.X.append({"audio": audio, "phonemes": phonemes, "sr": sr, "audio_duration": audio_duration, "words": words})
-            self.w2ph_dicts.append(w2ph_dict)
             # Read timestamps from labels.tsv
             with open(labels_file_path, 'r') as labels_file:
                 start_times, end_times = [], []
@@ -330,7 +333,8 @@ class AriaDataset(Dataset):
 
                 # generate the alpha tensor for labels as a sparse matrix.
                 # Using default hop length and window size.
-                alpha_tensor = create_sparse_alpha_tensor_from_labels(words, w2ph_dict, sr, start_times, end_times, audio_duration)
+                alpha_tensor = create_sparse_alpha_tensor_from_labels(words, self.word2phoneme_dict, sr, start_times,
+                                                                      end_times, audio_duration)
 
                 self.labels.append({"start_time": start_times,
                                     "end_time": end_times,
@@ -350,7 +354,6 @@ class AriaDataset(Dataset):
     def __getitem__(self, index):
         X = self.X[index]
         Y = self.labels[index]
-        w2ph_dict = self.w2ph_dicts[index]
         audio, phonemes, audio_duration, words = X['audio'], X['phonemes'], X["audio_duration"], X["words"]
         start_time, end_time = Y['start_time'], Y['end_time']
         word_start_indexes, word_end_indexes = Y['start_indexes'], Y['end_indexes']
@@ -360,7 +363,7 @@ class AriaDataset(Dataset):
 
         audio = audio[None, :]    # Adding extra channel for model
 
-        return name, audio, phonemes, sr, audio_duration, words, start_time, end_time, word_start_indexes, word_end_indexes, w2ph_dict, alpha_tensor
+        return name, audio, phonemes, sr, audio_duration, words, start_time, end_time, word_start_indexes, word_end_indexes, alpha_tensor
 
 
 if __name__ == "__main__":
@@ -368,5 +371,3 @@ if __name__ == "__main__":
     # dataset.pickle_dataset()
     print("Done")
     dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
-    for name, audio, phonemes, sr, audio_duration, words, start_time, end_time, word_start_indexes, word_end_indexes, w2ph_dict, alpha_tensor in dataloader:
-        print("done")

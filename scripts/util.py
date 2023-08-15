@@ -1,14 +1,16 @@
 import datetime
+import os
+import pickle
 import sys
 import time
 from itertools import zip_longest
 from typing import Tuple, List
-
-from textgrid import TextGrid, IntervalTier
 import ass
 import textgrid
 import csv
 import openpyxl
+
+from make_word2phoneme_dict import create_word2phoneme_file
 
 
 def create_tsv_file(data, file_path):
@@ -116,30 +118,6 @@ def print_timed_subtitles(_word_timestamps):
         print(f"[{create_srt_line(t1, t2, t3, t4)}] -------> {convert}")
         sys.stdout.flush()
         time_counter = start_time
-
-
-def create_textgrid(word_tuples, tier_name='words'):
-    # Create an empty TextGrid
-    grid = TextGrid()
-
-    # Calculate the max end time to set the TextGrid maxTime
-    max_end_time = max(word_tuples, key=lambda x: x[2])[2]
-    grid.maxTime = max_end_time
-
-    # Create an IntervalTier
-    tier = IntervalTier(name=tier_name, maxTime=max_end_time)
-
-    # Add each word to the IntervalTier
-    for word, start_time, end_time in word_tuples:
-        tier.add(start_time, end_time, word)
-
-    # Add the IntervalTier to the TextGrid
-    grid.append(tier)
-
-    return grid
-
-
-from typing import List, Tuple
 
 
 def resolve_conflicts(sorted_word_tuples: List[Tuple[str, float, float]]):
@@ -290,6 +268,66 @@ def find_triple_repeating_words(word_list):
     return triple_repeating_words, double_repeating_words
 
 
+def combine_dicts(*dicts):
+    combined = {}
+
+    for d in dicts:
+        for key, value in d.items():
+            if key in combined:
+                # Check if the values are the same
+                if combined[key] != value:
+                    print(f"Key {key} has conflicting values: {combined[key]} and {value}.")
+
+                    # Ask the user for their choice
+                    choice = input("Enter 1 to use the first value, or 2 to use the second value: ").strip()
+                    while choice not in ['1', '2']:
+                        print("Invalid choice. Please enter 1 or 2.")
+                        choice = input("Enter 1 to use the first value, or 2 to use the second value: ").strip()
+
+                    # Update the value based on the user's choice
+                    if choice == '2':
+                        combined[key] = value
+
+            else:
+                combined[key] = value
+
+    return combined
+
+
+def load_dict_from_file(filename):
+    """Load a dictionary from a tab-separated file"""
+    with open(filename) as f:
+        lines = f.readlines()
+
+    word2phonemes = {}
+    for line in lines:
+        line = line.replace('\n', '').split('\t')
+        word = line[0].lower().replace('’', "'")
+        phonemes = line[1]
+        word2phonemes[word] = phonemes
+
+    return word2phonemes
+
+
+def update_global_dict(new_file):
+    # Load existing global dictionary
+    output_path = "../dataset/word2phonemeglobal.pickle"
+    with open(output_path, "rb") as f:
+        global_dict = pickle.load(f)
+
+    # Load new dictionary from the provided file
+    new_dict = load_dict_from_file(new_file)
+
+    # Combine dictionaries using combine_dicts to handle conflicts
+    combined_dict = combine_dicts(global_dict, new_dict)
+
+    # Save the updated global dictionary back to the file
+    with open(output_path, "wb") as f:
+        pickle.dump(combined_dict, f)
+
+    print("Done")
+
+
 def create_lyrics_from_labels(words: List[str], file_path: str):
     """Creates a text file with five words per line from a list of words"""
     with open(file_path, 'w') as file:
@@ -299,52 +337,13 @@ def create_lyrics_from_labels(words: List[str], file_path: str):
 
 
 if __name__ == "__main__":
-    textgrid_files = ["/Users/pushkarjajoria/Downloads/Music alignment/Violetta_2.TextGrid",
-                      "/Users/pushkarjajoria/Downloads/Music alignment/Violetta_3_249_318.TextGrid",
-                      "/Users/pushkarjajoria/Downloads/Music alignment/Violetta_4.TextGrid",
-                      "/Users/pushkarjajoria/Downloads/Music alignment/gold_annotations_GC.TextGrid"]
-    lyrics_file = "/Users/pushkarjajoria/Desktop/Violetta/inputs/violetta_text/violetta.txt"
-    excel_file_path = "/Users/pushkarjajoria/Downloads/Music alignment/lyrics_diff.xlsx"
-    time_stamps = [(180, 248),
-                   (249, 318),
-                   (319, 450),
-                   (450, 570)]
-    error_words = [('misterioso', 185.14184, 185.17501),
-                   ]
     """
-    Processing steps:
-    1. Combine .ass annotation, followed by the text grid files.
-    2. Sort them based on starting time
-    3. Resolve conflicts by changing the start time such that it's strictly greater than the previous end time.
-        If the resulting interval is smaller than 0.1, change the end time such that the resulting interval is at least 
-        0.1 seconds.
-    4. Clean each word in this list to remove punctuations that are not valid. Round the time to 2 decimal points.
+    Generate word to pickle from tsv file
     """
-    word_tuples = combine_textgrid_files(textgrid_files)
-    word_tuples = sorted(word_tuples, key=lambda x: x[1])
-    resolved_word_tuples = resolve_conflicts(word_tuples)
-    final_labels = list(map(lambda x: (clean_words(x[0]), round(x[1], 2), round(x[2], 2)), resolved_word_tuples))
+    tsv_files = ["/Users/pushkarjajoria/Desktop/Aria data prep/casta_diva/norma_transcription.tsv"]
 
-    # "Save Excel file for side-by-side comparison"
-    # tg_word_list = list(map(lambda x: clean_words(x[0]), resolved_word_tuples))
-    # lyrics_words = read_lyrics_file(lyrics_file)
-    # create_excel_file(tg_word_list, lyrics_words, excel_file_path)
-    # print(len(tg_word_list))
-    # print(len(lyrics_words))
-
-    # "Saving textgrid file"
-    # filepath = "/Users/pushkarjajoria/Downloads/Music alignment/Violetta_combined.TextGrid"
-    # combined_tg = create_textgrid(resolved_word_tuples, tier_name="combined text_grid")
-    # with open(filepath, 'w') as handle:
-    #     combined_tg.write(handle)
-
-    "Saving a tsv file of labels"
-    filepath = "/Users/pushkarjajoria/Git/pushkarjajoria/lyrics-aligner/dataset/aria_violetta/labels.tsv"
-    create_tsv_file(final_labels, filepath)
-
-    # "Print double and triple repeating words"
-    # triple, double = find_triple_repeating_words(final_labels)
-    # print(double)
-    # print(triple)
-
-    create_lyrics_from_labels(list(map(lambda x: x[0], final_labels)), "/Users/pushkarjajoria/Git/pushkarjajoria/lyrics-aligner/dataset/aria_violetta/lyrics.txt")
+    for tsv_file_path in tsv_files:
+        aria_folder = os.path.dirname(tsv_file_path)
+        output_filepath = aria_folder + "/word2phonemes.pickle"
+        create_word2phoneme_file(tsv_file_path, output_filepath)
+        print(f"Created new file at {output_filepath}")
