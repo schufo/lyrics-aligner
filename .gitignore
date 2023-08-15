@@ -12,6 +12,7 @@ OSU/
 *.wav
 *.mp3
 *.pth.tar
+dataset.zip
 env*/
 
 #####=== Python ===#####
