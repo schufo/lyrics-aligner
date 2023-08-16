@@ -4,6 +4,7 @@
 cd ~/Git/lyrics-aligner/
 
 # Activate the conda environment
+source ~/miniconda3/etc/profile.d/conda.sh
 conda activate aligner_train
 
 # Load necessary modules
