@@ -253,6 +253,7 @@ def compute_alignment_mse(scores, phonemes, start_time):
 
 
 def forward_sanity_test(model_checkpoint="checkpoint/base/model_parameters.pth", dataset_path="dataset/"):
+    print("Running a single forward pass to verify.")
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print('Running model on {}.'.format(device))
     lyrics_aligner = model.InformedOpenUnmix3().to(device)
@@ -316,11 +317,11 @@ def train(args):
     w2ph_file = open(w2ph_dict_path, "rb")
     w2phoneme_dict = pickle.load(w2ph_file)
 
-    full_dataset = AriaDataset(path=dataset_path, word2phoneme_dict=w2phoneme_dict)
+    full_dataset = AriaDataset(path=dataset_path, word2phoneme_dict=w2phoneme_dict, ignore_list=["casta_diva"])
 
     # Perform the split
-    train_size = len(full_dataset) - 1
-    test_size = 1
+    train_size = max(len(full_dataset) - 1, 1)
+    test_size = len(full_dataset) - train_size
     train_dataset, test_dataset = random_split(full_dataset, [train_size, test_size])
     dataloader = DataLoader(train_dataset, batch_size=1, shuffle=True)
 

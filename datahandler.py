@@ -267,7 +267,7 @@ class Aria:
 
 
 class AriaDataset(Dataset):
-    def __init__(self, path, word2phoneme_dict, pickle_file='./dataset/aria_dataset.pickle', force_create=False):
+    def __init__(self, path, word2phoneme_dict, pickle_file='./dataset/aria_dataset.pickle', ignore_list=[]):
         """
         Create the dataset by either loading it from the pickle file if it is provided else creates one using the path.
 
@@ -295,8 +295,10 @@ class AriaDataset(Dataset):
                                             Now there is a global word2phoneme file that has been combined from all.
 
         Args:
+            pickle_file (object):
             path (str): The path to the directory containing the song datasets.
         """
+        self.ignore_list = ignore_list
         self.path = path
         self.word2phoneme_dict = word2phoneme_dict
         print("Creating the dataset, this may take a few minutes.")
@@ -308,6 +310,9 @@ class AriaDataset(Dataset):
 
         folders = [folder for folder in os.listdir(self.path) if os.path.isdir(os.path.join(self.path, folder))]
         for folder_name in folders:
+            if folder_name in self.ignore_list:
+                print(f"Ignoring {folder_name}.")
+                continue
             if folder_name in ['.DS_Store', "aria_dataset.pickle"]:
                 continue
             audio_file_path = os.path.join(self.path, folder_name, 'audio', 'song.mp3')
