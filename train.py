@@ -285,6 +285,9 @@ def forward_sanity_test(model_checkpoint="checkpoint/base/model_parameters.pth",
 def train(args):
     num_epochs = args.epochs
     save_steps = args.save_steps
+    if save_steps == 0:
+        print("Warning: Model checkpoints will not be saved untill the full training is completed. "
+              "If this is a mistake, rerun with save_steps #Number_of_steps.")
     run_name = args.run_name
     learning_rate = 1e-5  # Define learning rate as a variable for logging
 
@@ -351,7 +354,7 @@ def train(args):
 
             # Save checkpoint
             steps += 1
-            if steps % save_steps == 0:
+            if save_steps and steps % save_steps == 0:
                 print(f"Saving checkpoint after {steps} steps")
                 save_checkpoint(lyrics_aligner, run_name, epoch, steps, wandb)
 
@@ -426,8 +429,8 @@ def train(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Lyrics aligner')
-    parser.add_argument('--epochs', type=int, default=1)
-    parser.add_argument('--save_steps', type=int, default=float('inf'))
+    parser.add_argument('--epochs', type=int, default=50)
+    parser.add_argument('--save_steps', type=int, default=10)
     parser.add_argument('--run_name', type=str, default=datetime.now().strftime("%m%d_%H%M"))
     parser.add_argument("--forward_pass_sanity", action="store_true",
                         help="Runs just a single forward pass as a sanity check.")

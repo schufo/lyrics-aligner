@@ -5,8 +5,8 @@ usage() {
     echo "Run the training script with specified options."
     echo ""
     echo "Options:"
-    echo "  --epochs <value>             Number of epochs for training (default is 1 in train.py)"
-    echo "  --save_steps <value>         Number of steps to save (default is 10)"
+    echo "  --epochs <value>             Number of epochs for training (default is 50 in train.py)"
+    echo "  --save_steps <value>         Number of steps to save (default is 10). Set 0 for not saving intermediate checkpoints."
     echo "  --run_name <value>           Name of the run (default is current date-time in train.py)"
     echo "  --forward_pass_sanity        Run a single forward pass for sanity check (default is off)"
     echo "  -h, --help                   Display this help and exit"
@@ -37,6 +37,8 @@ SAVE_STEPS_ARG=""  # default value
 RUN_NAME_ARG=""
 FORWARD_PASS_SANITY_ARG=""
 
+# Process input arguments: validates numeric inputs for --epochs and --save_steps,
+# ensures valid string for --run_name, and checks presence of --forward_pass_sanity
 while (( "$#" )); do
   case "$1" in
     --epochs)
