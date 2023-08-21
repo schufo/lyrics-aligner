@@ -302,6 +302,7 @@ def train(args):
     run = wandb.init(project=project_name, name=args.run_name, config=param_config)
     # Load model
     lyrics_aligner = model.InformedOpenUnmix3().to(device)
+    gradient_monitor = model.GradientMonitor(lyrics_aligner)
     state_dict = torch.load('checkpoint/base/model_parameters.pth', map_location=device)
     lyrics_aligner.load_state_dict(state_dict)
 
@@ -365,9 +366,12 @@ def train(args):
                 'Step': steps,
                 'Backward Pass Time': backward_time
             })
+            gradient_monitor.log_gradients()
+
     train_end_time = time.time()
     train_total_time = timedelta(seconds=train_end_time - train_start_time)
     print(f"Training complete in {str(train_total_time)}.")
+    gradient_monitor.close()
     # Comparison with baseline model on test set
     with torch.no_grad():
         print("Evaluating the model on test set")
@@ -415,6 +419,7 @@ def train(args):
     print("Saving final checkpoint")
     save_checkpoint(lyrics_aligner, run_name, None, None, wandb)
 
+
     # End the wandb run
     run.finish()
 
@@ -427,6 +432,9 @@ if __name__ == "__main__":
     parser.add_argument("--forward_pass_sanity", action="store_true",
                         help="Runs just a single forward pass as a sanity check.")
     args = parser.parse_args()
+
+    # args.forward_pass_sanity = True     # THIS SHOULD BE COMMENTED!!
+
     if args.forward_pass_sanity:
         forward_sanity_test()
     else:

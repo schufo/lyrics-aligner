@@ -4,10 +4,39 @@ https://github.com/sigsep/open-unmix-pytorch
 """
 
 from torch.nn import LSTM, Linear, BatchNorm1d, Parameter
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+import torch
+import wandb
+
+
+class GradientMonitor:
+    def __init__(self, model):
+        self.model = model
+        self.gradient_stats = {}
+        self.hooks = []
+        self._register_hooks()
+
+    def _register_hooks(self):
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                hook = param.register_hook(self._save_gradient_stats(name))
+                self.hooks.append(hook)
+
+    def _save_gradient_stats(self, name):
+        def hook(grad):
+            grad_norm = torch.norm(grad).item()
+            self.gradient_stats[name] = grad_norm  # directly save the norm for that parameter group
+        return hook
+
+    def log_gradients(self):
+        wandb.log(self.gradient_stats)
+        self.gradient_stats = {}
+
+    def close(self):
+        for hook in self.hooks:
+            hook.remove()
 
 
 class NoOp(nn.Module):
